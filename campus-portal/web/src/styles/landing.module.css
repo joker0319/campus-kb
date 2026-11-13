@@ -1,0 +1,408 @@
+/* 首页 —— A 类页面，全套设计语言；默认样式可见，入场起始态只挂在 data-run='true' 下 */
+
+.page {
+  /* body 是 overflow:hidden（工作台锁滚动），首页改为容器内滚动 */
+  height: 100%;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+  background: var(--paper);
+  color: var(--ink);
+  overflow-x: clip;
+}
+
+/* ───────── 氛围层：aurora + 渐隐网格 + 噪点 ───────── */
+
+.bg {
+  position: fixed;
+  inset: 0;
+  z-index: -1;
+  pointer-events: none;
+}
+.bgAurora {
+  position: absolute;
+  inset: 0;
+  background:
+    radial-gradient(
+      42% 32% at 14% 18%,
+      color-mix(in srgb, var(--brand) 9%, transparent),
+      transparent
+    ),
+    radial-gradient(38% 30% at 86% 64%, color-mix(in srgb, var(--ok) 7%, transparent), transparent);
+  animation: drift 22s var(--ease) infinite alternate;
+}
+@keyframes drift {
+  from {
+    transform: translate3d(-2%, -1%, 0) scale(1);
+  }
+  to {
+    transform: translate3d(2%, 2%, 0) scale(1.06);
+  }
+}
+.bgGrid {
+  position: absolute;
+  inset: 0;
+  background-image:
+    linear-gradient(var(--line-2) 1px, transparent 1px),
+    linear-gradient(90deg, var(--line-2) 1px, transparent 1px);
+  background-size: 48px 48px;
+  mask-image: linear-gradient(#000 0%, transparent 52%);
+}
+.bgNoise {
+  position: absolute;
+  inset: 0;
+  opacity: 0.035;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='160' height='160'%3E%3Cfilter id='n'%3E%3CfeTurbulence type='fractalNoise' baseFrequency='0.8' numOctaves='2'/%3E%3C/filter%3E%3Crect width='100%25' height='100%25' filter='url(%23n)'/%3E%3C/svg%3E");
+}
+
+/* ───────── 顶栏 ───────── */
+
+.top {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 22px clamp(20px, 5vw, 64px) 0;
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+}
+.brand {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  font-size: 13.5px;
+  font-weight: 600;
+  letter-spacing: 0.02em;
+  color: var(--ink-2);
+}
+.brandDot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  background: var(--brand);
+  box-shadow: 0 0 0 3px var(--brand-tint);
+}
+.topCta {
+  font-size: 13px;
+  font-weight: 600;
+  padding: 8px 16px;
+  border-radius: 999px;
+  background: var(--surface);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.047);
+  transition:
+    transform 0.15s var(--ease),
+    box-shadow 0.15s var(--ease);
+}
+.topCta:hover {
+  transform: translateY(-1px);
+  box-shadow:
+    0 0 0 3px rgba(0, 0, 0, 0.047),
+    0 6px 16px rgba(0, 0, 0, 0.07);
+}
+
+/* ───────── 主区 ───────── */
+
+.main {
+  width: 100%;
+  max-width: 1240px;
+  margin: 0 auto;
+  padding: 0 clamp(20px, 5vw, 64px);
+  box-sizing: border-box;
+  flex: 1;
+}
+
+.hero {
+  display: grid;
+  /* hero 左栏现在只有一处小助手，把宽度让给稿件卡 */
+  grid-template-columns: minmax(0, 0.86fr) minmax(0, 1.14fr);
+  gap: clamp(28px, 3.6vw, 52px);
+  align-items: center;
+  padding: clamp(48px, 7.5vh, 92px) 0 clamp(34px, 5vh, 58px);
+}
+.heroCopy {
+  min-width: 0;
+}
+.heroStage {
+  min-width: 0;
+  /* 给 3D 卡堆的阴影与倾斜留出空间，否则会被 page 的 overflow-x:clip 切掉 */
+  padding: 6px 2px 0;
+}
+.eyebrow {
+  font-size: 13px;
+  font-weight: 600;
+  letter-spacing: 0.1em;
+  color: var(--brand);
+  margin: 0 0 22px;
+}
+
+/* 墨点小助手占据原 lede 的位置，作为首屏的「开口」 */
+.petSlot {
+  --pet: clamp(72px, 6.5vw, 94px);
+  margin-top: 4px;
+}
+
+.actions {
+  display: flex;
+  align-items: center;
+  gap: 14px;
+  margin-top: 34px;
+  flex-wrap: wrap;
+}
+.cta {
+  display: inline-flex;
+  align-items: center;
+  gap: 10px;
+  padding: 13px 26px;
+  border-radius: 999px;
+  background: var(--ink);
+  color: var(--paper);
+  font-size: 14.5px;
+  font-weight: 600;
+  transform: translate(var(--tx, 0px), var(--ty, 0px));
+  transition:
+    transform 0.16s var(--ease),
+    box-shadow 0.16s var(--ease);
+  box-shadow: 0 10px 26px rgba(0, 0, 0, 0.16);
+  position: relative;
+  overflow: hidden;
+}
+.cta::after {
+  content: '';
+  position: absolute;
+  inset: 0;
+  background: linear-gradient(
+    105deg,
+    transparent 40%,
+    rgba(255, 255, 255, 0.14) 50%,
+    transparent 60%
+  );
+  transform: translateX(-120%);
+  transition: transform 0.5s var(--ease);
+}
+.cta:hover::after {
+  transform: translateX(120%);
+}
+.ctaArrow {
+  transition: transform 0.16s var(--ease);
+}
+.cta:hover .ctaArrow {
+  transform: translateX(3px);
+}
+.ctaGhost {
+  font-size: 14px;
+  font-weight: 600;
+  color: var(--ink-2);
+  padding: 12px 18px;
+  border-radius: 999px;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.047);
+  transition:
+    color 0.15s,
+    transform 0.15s var(--ease);
+}
+.ctaGhost:hover {
+  color: var(--ink);
+  transform: translateY(-1px);
+}
+
+/* ───────── 统计条 ───────── */
+
+.stats {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 1px;
+  background: var(--line);
+  border-radius: 16px;
+  overflow: hidden;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.047);
+  margin: clamp(36px, 6vh, 64px) 0 0;
+}
+.stat {
+  background: var(--paper);
+  padding: 22px 24px;
+}
+.statNum {
+  font-family: var(--serif);
+  font-size: clamp(30px, 3.4vw, 44px);
+  font-weight: 700;
+  line-height: 1;
+}
+.statNum i {
+  font-style: normal;
+  font-size: 0.45em;
+  color: var(--ink-3);
+  margin-left: 3px;
+}
+.statLabel {
+  margin-top: 9px;
+  font-size: 12.5px;
+  color: var(--ink-3);
+  letter-spacing: 0.02em;
+}
+
+/* ───────── Bento ───────── */
+
+.grid {
+  display: grid;
+  grid-template-columns: repeat(12, 1fr);
+  gap: 14px;
+  margin-top: clamp(36px, 6vh, 64px);
+  scroll-margin-top: 40px;
+}
+.card {
+  position: relative;
+  grid-column: span 6;
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  border-radius: 18px;
+  padding: 26px 28px 28px;
+  overflow: hidden;
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.047);
+}
+.card::before {
+  content: '';
+  position: absolute;
+  inset: 0;
+  pointer-events: none;
+  background: radial-gradient(
+    340px circle at var(--mx, 50%) var(--my, 50%),
+    var(--brand-tint),
+    transparent 72%
+  );
+  opacity: 0;
+  transition: opacity 0.2s;
+}
+.card:hover::before {
+  opacity: 1;
+}
+.cardTag {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+}
+.cardId {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  letter-spacing: 0.04em;
+  color: var(--brand);
+  background: var(--brand-tint);
+  padding: 4px 9px;
+  border-radius: 999px;
+}
+.cardPlanned {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  border: 1px solid var(--line);
+  padding: 3.5px 9px;
+  border-radius: 999px;
+}
+.cardTitle {
+  margin: 16px 0 0;
+  font-size: 19px;
+  font-weight: 700;
+  letter-spacing: 0.01em;
+}
+.cardBody {
+  margin: 10px 0 0;
+  font-size: 14px;
+  line-height: 1.85;
+  color: var(--ink-2);
+}
+
+/* ───────── 流程条 ───────── */
+
+.steps {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 14px;
+  margin: clamp(36px, 6vh, 64px) 0 clamp(48px, 8vh, 88px);
+}
+.step {
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+  padding: 18px 20px;
+  border-radius: 14px;
+  background: var(--surface);
+  box-shadow: 0 0 0 3px rgba(0, 0, 0, 0.047);
+}
+.stepN {
+  font-family: var(--mono);
+  font-size: 12px;
+  color: var(--brand);
+}
+.stepT {
+  font-size: 14.5px;
+}
+.stepD {
+  font-size: 12.5px;
+  color: var(--ink-3);
+}
+
+/* ───────── 页脚 ───────── */
+
+.foot {
+  display: flex;
+  justify-content: space-between;
+  gap: 16px;
+  flex-wrap: wrap;
+  padding: 18px clamp(20px, 5vw, 64px) 26px;
+  max-width: 1240px;
+  width: 100%;
+  margin: 0 auto;
+  box-sizing: border-box;
+  font-family: var(--mono);
+  font-size: 11.5px;
+  color: var(--ink-4);
+  border-top: 1px solid var(--line-2);
+}
+
+/* ───────── 入场编排：总预算 ≤2.2s，结束后移除 data-run ───────── */
+
+.page[data-run='true'] .in {
+  animation: lRise 0.85s var(--ease) both;
+  animation-delay: var(--d, 0s);
+}
+@keyframes lRise {
+  from {
+    opacity: 0;
+    transform: translateY(14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .page[data-run='true'] .in {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+  .bgAurora {
+    animation: none;
+  }
+}
+
+@media (max-width: 1020px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+    padding-top: clamp(36px, 6vh, 64px);
+  }
+  .heroStage {
+    order: 2;
+  }
+}
+
+@media (max-width: 900px) {
+  .stats {
+    grid-template-columns: repeat(2, 1fr);
+  }
+  .card {
+    grid-column: span 12;
+  }
+  .steps {
+    grid-template-columns: repeat(2, 1fr);
+  }
+}

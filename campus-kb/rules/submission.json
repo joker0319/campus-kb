@@ -1,0 +1,47 @@
+{
+  "source": "电子通讯平台投稿须知 A75",
+  "rules": [
+    {
+      "id": "SUB-001",
+      "category": "投稿格式",
+      "severity": "error",
+      "type": "title_format",
+      "desc": "投稿标题须为【投稿部门】投稿内容，英文为 [Dept. Abbr.] English Title",
+      "params": {},
+      "suggestion": "如【媒体传讯处】2026 ACP世界大赛中国总决赛落址港城大（东莞）"
+    },
+    {
+      "id": "SUB-002",
+      "category": "投稿格式",
+      "severity": "error",
+      "type": "bilingual_flag",
+      "desc": "仅提供中文内容时，英文标题后必须标注 [Chinese]",
+      "params": {},
+      "suggestion": "在英文标题末尾加 [Chinese]"
+    },
+    {
+      "id": "SUB-003",
+      "category": "投稿格式",
+      "severity": "warn",
+      "type": "category_required",
+      "desc": "投稿须从五个分类中勾选至少一项",
+      "params": {
+        "categories": ["通知动态", "活动预告", "大学要闻", "媒体报道", "他山之石"]
+      },
+      "suggestion": "补充分类：通知动态 / 活动预告 / 大学要闻 / 媒体报道 / 他山之石"
+    },
+    {
+      "id": "SUB-004",
+      "category": "投稿格式",
+      "severity": "warn",
+      "type": "require_context",
+      "desc": "「活动预告」类须写明具体日期、时间、地点（中英文）",
+      "params": {
+        "terms": [
+          { "term": "活动预告", "require": ["时间", "地点", "日期", "月", "日"] }
+        ]
+      },
+      "suggestion": "在正文中补全活动日期、时间、地点，并提供中英文版本"
+    }
+  ]
+}

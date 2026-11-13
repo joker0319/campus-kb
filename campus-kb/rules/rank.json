@@ -1,0 +1,17 @@
+{
+  "source": "香港城市大学（东莞）常用表述规范手册 2026.05｜三、常用信息：排名相关",
+  "rules": [
+    {
+      "id": "RANK-001",
+      "category": "数据一致性",
+      "severity": "error",
+      "type": "rank_conflict",
+      "desc": "同一届次排名在文内出现不同数值，须核对权威来源",
+      "params": {
+        "year": "2027",
+        "indicator": "QS"
+      },
+      "suggestion": "以 https://www.cityu.edu.hk 官方发布为准；手册中文版与英文版当前存在 63 / 52 的冲突，需媒体传讯处确认后统一"
+    }
+  ]
+}

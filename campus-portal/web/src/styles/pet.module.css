@@ -1,0 +1,204 @@
+/* 墨点小助手 —— 三层 <g> 分别承载呼吸 / 弹跳 / 眨眼，
+   同一元素叠多个 transform 动画时后者会覆盖前者，必须分层。 */
+
+.row {
+  display: flex;
+  align-items: center;
+  gap: calc(var(--pet, 56px) * 0.22);
+  min-height: var(--pet, 56px);
+}
+
+.pet {
+  flex: none;
+  width: var(--pet, 56px);
+  height: var(--pet, 56px);
+  padding: 0;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  background: transparent;
+  transition: transform 0.22s var(--ease);
+}
+.pet:hover {
+  transform: translateY(-2px) scale(1.05);
+}
+.pet:active {
+  transform: scale(0.96);
+}
+.pet:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
+}
+
+.svg {
+  width: 100%;
+  height: 100%;
+  display: block;
+  overflow: visible;
+}
+
+/* 呼吸：极小的幅度，幅度大就成了蹦跳玩具 */
+.breathe {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+  animation: breathe 3.8s ease-in-out infinite;
+}
+@keyframes breathe {
+  0%,
+  100% {
+    transform: scale(1, 1);
+  }
+  50% {
+    transform: scale(1.022, 0.975);
+  }
+}
+
+.pop {
+  transform-box: fill-box;
+  transform-origin: 50% 100%;
+}
+/* 两个同内容的关键帧交替，靠 animation-name 变化让连点也能重播 */
+.pet[data-pop='1'] .pop {
+  animation: popA 0.54s var(--ease);
+}
+.pet[data-pop='2'] .pop {
+  animation: popB 0.54s var(--ease);
+}
+@keyframes popA {
+  0% {
+    transform: none;
+  }
+  16% {
+    transform: scale(1.13, 0.85) translateY(2px);
+  }
+  44% {
+    transform: scale(0.93, 1.12) translateY(-6px);
+  }
+  70% {
+    transform: scale(1.03, 0.97) translateY(0);
+  }
+  100% {
+    transform: none;
+  }
+}
+@keyframes popB {
+  0% {
+    transform: none;
+  }
+  16% {
+    transform: scale(1.13, 0.85) translateY(2px);
+  }
+  44% {
+    transform: scale(0.93, 1.12) translateY(-6px);
+  }
+  70% {
+    transform: scale(1.03, 0.97) translateY(0);
+  }
+  100% {
+    transform: none;
+  }
+}
+
+/* 眨眼：4.8s 里只眨 3%，看起来像生物而不是定时器 */
+.eyes {
+  transform-box: fill-box;
+  transform-origin: center;
+  animation: blink 4.8s var(--ease) infinite;
+}
+@keyframes blink {
+  0%,
+  91%,
+  100% {
+    transform: scaleY(1);
+  }
+  94% {
+    transform: scaleY(0.08);
+  }
+}
+
+.pupils {
+  transform: translate(var(--gx, 0px), var(--gy, 0px));
+  transition: transform 0.18s ease-out;
+}
+
+.stem {
+  stroke: var(--brand);
+  stroke-width: 2.4;
+  stroke-linecap: round;
+  opacity: 0.55;
+}
+.tip {
+  fill: var(--brand);
+}
+.body {
+  fill: var(--ink);
+}
+.eye {
+  fill: var(--surface);
+}
+.pupil {
+  fill: var(--ink);
+}
+.mouth {
+  fill: none;
+  stroke: var(--surface);
+  stroke-width: 1.9;
+  stroke-linecap: round;
+  opacity: 0.9;
+}
+
+/* 气泡 */
+.bubble {
+  position: relative;
+  margin: 0;
+  padding: calc(var(--pet, 56px) * 0.16) calc(var(--pet, 56px) * 0.25);
+  max-width: 370px;
+  font-size: max(12.5px, calc(var(--pet, 56px) * 0.19));
+  line-height: 1.6;
+  color: var(--ink-2);
+  background: var(--surface);
+  border-radius: 12px;
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 8px 20px -14px rgba(25, 25, 23, 0.4);
+  animation: bubbleIn 0.32s var(--ease);
+}
+.bubble::before {
+  content: '';
+  position: absolute;
+  left: -3.5px;
+  top: 50%;
+  width: 7px;
+  height: 7px;
+  transform: translateY(-50%) rotate(45deg);
+  background: var(--surface);
+  box-shadow: -1px 1px 0 var(--line);
+}
+@keyframes bubbleIn {
+  from {
+    opacity: 0;
+    transform: translateX(-5px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .breathe,
+  .eyes,
+  .bubble,
+  .pet[data-pop='1'] .pop,
+  .pet[data-pop='2'] .pop {
+    animation: none;
+  }
+  .pupils {
+    transform: none;
+  }
+  .pet,
+  .pet:hover,
+  .pet:active {
+    transform: none;
+  }
+}

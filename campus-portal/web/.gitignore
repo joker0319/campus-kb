@@ -1,0 +1,7 @@
+node_modules
+dist
+*.local
+.DS_Store
+npm-debug.log*
+# Vite 加载配置时生成的临时文件（沙箱环境未能自动清理）
+*.timestamp-*.mjs

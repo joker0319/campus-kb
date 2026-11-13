@@ -1,0 +1,19 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <title>校园知识库 · 媒体传讯处</title>
+    <script>
+      /* 入场标记必须在首帧前打上，避免先渲染再隐藏造成闪屏；
+         该 class 只负责动画的起始态，动画结束后由 App 移除，元素回落默认可见样式 */
+      if (!matchMedia('(prefers-reduced-motion: reduce)').matches) {
+        document.documentElement.classList.add('motion-run');
+      }
+    </script>
+  </head>
+  <body>
+    <div id="root"></div>
+    <script type="module" src="/src/main.tsx"></script>
+  </body>
+</html>

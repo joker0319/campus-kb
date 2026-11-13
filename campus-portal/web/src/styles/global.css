@@ -1,0 +1,90 @@
+@import './tokens.css';
+
+*,
+*::before,
+*::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html,
+body,
+#root {
+  height: 100%;
+}
+
+body {
+  font-family: var(--sans);
+  font-size: 13px;
+  line-height: 1.5;
+  color: var(--ink);
+  background: var(--sunk);
+  -webkit-font-smoothing: antialiased;
+  overflow: hidden;
+}
+
+::selection {
+  background: rgba(163, 43, 36, 0.16);
+}
+
+button {
+  font: inherit;
+  color: inherit;
+  background: none;
+  border: none;
+  cursor: pointer;
+}
+
+a {
+  color: inherit;
+  text-decoration: none;
+}
+
+::-webkit-scrollbar {
+  width: 10px;
+  height: 10px;
+}
+::-webkit-scrollbar-thumb {
+  background: #d9d6cc;
+  border-radius: 10px;
+  border: 3px solid transparent;
+  background-clip: padding-box;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #c6c2b6;
+  background-clip: padding-box;
+  border: 3px solid transparent;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+
+/* 一次性入场：默认可见，隐藏起始态只挂在 .motion-run 下。
+   若把 opacity:0 写进默认样式，动画撤销后元素会回落到隐藏态（白屏）。 */
+html.motion-run .js-anim {
+  opacity: 0;
+  transform: translateY(6px);
+  animation: js-rise 0.42s var(--ease) both;
+  animation-delay: var(--d, 0s);
+}
+
+@keyframes js-rise {
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  html.motion-run .js-anim {
+    animation: none;
+    opacity: 1;
+    transform: none;
+  }
+}
+
+:where(button, [role='button'], a, input):focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 1px;
+}

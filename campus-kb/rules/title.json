@@ -1,0 +1,37 @@
+{
+  "source": "香港城市大学（东莞）常用表述规范手册 2026.05｜二、头衔与职称新闻稿件写作规范",
+  "rules": [
+    {
+      "id": "TITLE-001",
+      "category": "头衔",
+      "severity": "warn",
+      "type": "must_near",
+      "desc": "校领导姓名出现时，附近须带规范职务（含职务限定语），避免只写泛称",
+      "params": {
+        "window": 45,
+        "people": [
+          { "name": "段宝岩", "must_near": ["校长"] },
+          { "name": "鲁春", "must_near": ["执行校长"] },
+          { "name": "李娟", "must_near": ["副校长（学术）", "副校长(学术)"] },
+          { "name": "刘子顺", "must_near": ["副校长（研究与创新）", "副校长(研究与创新)"] },
+          { "name": "赵志裕", "must_near": ["副校长（行政）", "副校长(行政)"] },
+          { "name": "程军祥", "must_near": ["协理副校长（运维）", "协理副校长(运维)"] },
+          { "name": "李远", "must_near": ["协理副校长（教学与发展）", "协理副校长(教学与发展)"] }
+        ]
+      },
+      "suggestion": "首次出现用「职务全称 + 姓名」，后文可用「职务简称 + 姓名」或「姓 + 职务」"
+    },
+    {
+      "id": "TITLE-002",
+      "category": "头衔",
+      "severity": "info",
+      "type": "forbid_pattern",
+      "desc": "不得使用规范手册职务对照表未收录的职务变体",
+      "params": {
+        "pattern": "(常务副校长|常务执行校长|第一副校长)",
+        "message": "该职务写法未见于规范手册职务对照表，请核对官网 leadership 页面"
+      },
+      "suggestion": "以 https://www.cityu-dg.edu.cn/zh/leadership.html 为准"
+    }
+  ]
+}

@@ -1,0 +1,22 @@
+{
+  // ---- 保存即格式化 + 自动修 lint ----
+  "editor.formatOnSave": true,
+  "editor.defaultFormatter": "esbenp.prettier-vscode",
+  "editor.codeActionsOnSave": {
+    "source.fixAll.eslint": "explicit"
+  },
+  "files.eol": "\n",
+
+  // ---- ESLint：配置文件在 campus-portal/web 下，让插件按文件位置自动定位 ----
+  "eslint.useFlatConfig": true,
+  "eslint.workingDirectories": [{ "mode": "auto" }],
+  "eslint.validate": ["javascript", "typescript", "typescriptreact"],
+
+  // ---- TypeScript：使用项目内安装的版本，与命令行行为一致 ----
+  "typescript.tsdk": "campus-portal/web/node_modules/typescript/lib",
+  "typescript.enablePromptUseWorkspaceTsdk": true,
+
+  "prettier.requireConfig": true,
+  "[css]": { "editor.defaultFormatter": "esbenp.prettier-vscode" },
+  "[json]": { "editor.defaultFormatter": "esbenp.prettier-vscode" }
+}

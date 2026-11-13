@@ -1,0 +1,758 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>校稿台 · 媒体传讯处</title>
+<script>
+/* 入场标记必须在首帧渲染前打上，否则先渲染可见内容再被隐藏，会闪屏 */
+if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
+  document.documentElement.classList.add("run");
+}
+</script>
+<!--
+  设计约束（与 v1 的区别，刻意为之）
+  1. 字体全部走系统栈：内网无法访问 Google Fonts，任何外链字体都会 fallback 并导致度量失配。
+  2. 正文不随视口缩放：工作台不是落地页，13 寸和 27 寸上正文都必须是 15px。
+     度量系统用固定 px 阶 + 4px 网格，而不是 vw 换算的 rem。
+  3. 无渐变、无光斑、无逐字入场：动效只有一次 420ms 的分层落位。
+  4. 数据全部来自真实校验结果（campus-kb / bad-draft.md），不编写装饰性文案。
+-->
+<style>
+:root{
+  /* 纸与墨 */
+  --paper:#FCFBF8;
+  --surface:#FFFFFF;
+  --rail:#FFFFFF;
+  --sunk:#F7F6F1;
+  --ink:#191917;
+  --ink-2:#54514A;
+  --ink-3:#8B877C;
+  --ink-4:#A9A49A;
+  --line:#E6E3DA;
+  --line-2:#EFEDE6;
+
+  /* 校样标记：只用三个语义色，不引入装饰色 */
+  --err:#A32B24;
+  --err-tint:rgba(163,43,36,.085);
+  --warn:#8A6A1F;
+  --warn-tint:rgba(138,106,31,.10);
+  --ok:#4A6B4A;
+
+  --sans:"PingFang SC","HarmonyOS Sans SC","Hiragino Sans GB","Microsoft YaHei",system-ui,-apple-system,sans-serif;
+  --serif:"Songti SC","Noto Serif SC","Source Han Serif SC",Georgia,serif;
+  --mono:"SF Mono",ui-monospace,Menlo,Consolas,monospace;
+
+  --ease:cubic-bezier(.22,1,.36,1);
+  --r:8px;
+}
+*{box-sizing:border-box;margin:0;padding:0}
+html,body{height:100%}
+body{
+  font-family:var(--sans);font-size:13px;line-height:1.5;color:var(--ink);
+  background:var(--sunk);
+  -webkit-font-smoothing:antialiased;
+  overflow:hidden;
+}
+::selection{background:rgba(163,43,36,.16)}
+button{font:inherit;color:inherit;background:none;border:none;cursor:pointer}
+::-webkit-scrollbar{width:10px;height:10px}
+::-webkit-scrollbar-thumb{background:#D9D6CC;border-radius:10px;border:3px solid transparent;background-clip:padding-box}
+::-webkit-scrollbar-thumb:hover{background:#C6C2B6;background-clip:padding-box;border:3px solid transparent}
+::-webkit-scrollbar-track{background:transparent}
+
+.app{height:100dvh;display:grid;grid-template-rows:52px minmax(0,1fr) 33px}
+
+/* ─────────── 顶栏 ─────────── */
+.bar{
+  display:flex;align-items:center;gap:16px;padding:0 16px 0 14px;
+  background:var(--surface);border-bottom:1px solid var(--line);
+  position:relative;z-index:5;
+}
+.mark-crest{
+  width:26px;height:26px;border-radius:7px;display:grid;place-items:center;
+  background:#8C1D2F;color:#fff;font-size:9px;font-weight:700;letter-spacing:.4px;
+  flex-shrink:0;
+}
+.bar-name{font-size:13px;font-weight:600;letter-spacing:.01em;white-space:nowrap}
+.bar-sub{font-size:11.5px;color:var(--ink-3);white-space:nowrap;margin-left:-10px}
+.bar-sep{width:1px;height:18px;background:var(--line);margin:0 2px}
+.doc-chip{
+  display:flex;align-items:center;gap:7px;height:28px;padding:0 10px 0 8px;
+  border:1px solid var(--line);border-radius:7px;background:var(--paper);
+  font-size:12px;color:var(--ink-2);font-variant-numeric:tabular-nums;
+}
+.doc-chip .ftype{
+  font-size:8px;font-weight:700;letter-spacing:.02em;color:#1B4F9C;
+  background:#EAF0FB;border-radius:3px;padding:2px 3px;line-height:1;
+}
+.doc-chip b{font-weight:600;color:var(--ink)}
+.bar-right{margin-left:auto;display:flex;align-items:center;gap:8px}
+.btn{
+  height:28px;padding:0 11px;border-radius:7px;font-size:12px;font-weight:500;
+  display:inline-flex;align-items:center;gap:6px;
+  border:1px solid var(--line);color:var(--ink-2);background:var(--surface);
+  transition:background .15s,border-color .15s,color .15s;
+}
+.btn:hover{background:var(--sunk);border-color:#D8D4C9;color:var(--ink)}
+.btn:active{background:#F0EEE7}
+.btn-primary{background:#8C1D2F;border-color:#8C1D2F;color:#fff}
+.btn-primary:hover{background:#7A1828;border-color:#7A1828;color:#fff}
+.btn:focus-visible,.chip:focus-visible,.issue:focus-visible,.rail-item:focus-visible{
+  outline:2px solid #8C1D2F;outline-offset:1px;
+}
+.who{
+  width:26px;height:26px;border-radius:50%;display:grid;place-items:center;
+  background:var(--sunk);border:1px solid var(--line);
+  font-size:11px;color:var(--ink-2);font-weight:600;
+}
+
+/* ─────────── 工作区 ─────────── */
+.workspace{display:grid;grid-template-columns:60px minmax(0,1fr) 366px 320px;min-height:0;background:var(--surface)}
+
+/* 左栏 */
+.rail{
+  background:var(--rail);border-right:1px solid var(--line);
+  display:flex;flex-direction:column;align-items:center;padding:10px 0;gap:2px;
+}
+.rail-item{
+  width:44px;height:44px;border-radius:8px;display:flex;flex-direction:column;
+  align-items:center;justify-content:center;gap:3px;
+  color:var(--ink-3);transition:background .15s,color .15s;
+}
+.rail-item svg{display:block}
+.rail-item span{font-size:9.5px;letter-spacing:.02em;line-height:1}
+.rail-item:hover{background:var(--sunk);color:var(--ink-2)}
+.rail-item.on{color:#8C1D2F;background:rgba(140,29,47,.055)}
+.rail-bottom{margin-top:auto}
+
+/* ─────────── 稿件 ─────────── */
+.doc{background:var(--paper);overflow-y:auto;min-height:0;position:relative}
+.doc-head{
+  position:sticky;top:0;z-index:2;
+  display:flex;align-items:center;gap:10px;
+  padding:9px 20px;border-bottom:1px solid var(--line-2);
+  background:rgba(252,251,248,.92);backdrop-filter:blur(6px);
+}
+.doc-head .t{font-size:11.5px;color:var(--ink-3);letter-spacing:.04em}
+.doc-head .r{margin-left:auto;display:flex;align-items:center;gap:10px}
+.switch{display:flex;align-items:center;gap:6px;font-size:11.5px;color:var(--ink-2);cursor:pointer}
+.switch input{appearance:none;width:26px;height:15px;border-radius:99px;background:#DAD7CD;position:relative;cursor:pointer;transition:background .18s}
+.switch input::after{content:"";position:absolute;top:2px;left:2px;width:11px;height:11px;border-radius:50%;background:#fff;transition:transform .18s var(--ease)}
+.switch input:checked{background:#8C1D2F}
+.switch input:checked::after{transform:translateX(11px)}
+
+.sheet{max-width:672px;margin:0 auto;padding:34px 40px 90px}
+.sheet-meta{
+  display:flex;align-items:baseline;gap:10px;flex-wrap:wrap;
+  font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums;
+  padding-bottom:14px;border-bottom:1px solid var(--line-2);margin-bottom:26px;
+}
+.sheet-meta b{font-weight:500;color:var(--ink-2)}
+.sheet-meta .sp{flex:1}
+
+.prose{font-family:var(--serif);font-size:15px;line-height:2.05;color:#23231F}
+.prose p{position:relative;margin-bottom:18px;text-align:justify;text-justify:inter-ideograph}
+.prose p.title{
+  font-size:19px;font-weight:600;line-height:1.7;text-align:center;
+  letter-spacing:.01em;margin:4px 0 30px;color:#171715;
+}
+.ln{
+  position:absolute;left:-34px;top:6px;
+  font-family:var(--mono);font-size:10px;color:var(--ink-4);
+  user-select:none;letter-spacing:0;
+}
+.prose p.flash{animation:flash 1.1s var(--ease)}
+@keyframes flash{0%{background:rgba(140,29,47,.07)}100%{background:transparent}}
+
+/* 校样标记 */
+.mk{
+  padding:0 1px;border-bottom:1.5px solid var(--err);background:var(--err-tint);
+  cursor:pointer;transition:background .15s,box-shadow .15s;
+  border-radius:2px 2px 0 0;
+}
+.mk.w{border-bottom-style:dashed;border-bottom-color:var(--warn);background:var(--warn-tint)}
+.mk:hover{background:rgba(163,43,36,.18)}
+.mk.w:hover{background:rgba(138,106,31,.2)}
+.mk.on{box-shadow:0 0 0 2px rgba(163,43,36,.28);border-radius:2px}
+.mk.w.on{box-shadow:0 0 0 2px rgba(138,106,31,.3)}
+.prose.plain .mk{border-bottom:none;background:none;box-shadow:none;cursor:text}
+
+/* ─────────── 问题清单 ─────────── */
+.issues{display:flex;flex-direction:column;min-height:0;border-left:1px solid var(--line)}
+.pane-head{
+  padding:11px 14px 10px;border-bottom:1px solid var(--line-2);flex-shrink:0;
+}
+.pane-title{
+  display:flex;align-items:baseline;gap:8px;margin-bottom:10px;
+}
+.pane-title h2{font-size:13px;font-weight:600;letter-spacing:.01em}
+.pane-title em{font-style:normal;font-size:11.5px;color:var(--ink-3);font-variant-numeric:tabular-nums}
+.filters{display:flex;gap:4px}
+.chip{
+  height:24px;padding:0 9px;border-radius:6px;font-size:11.5px;color:var(--ink-2);
+  display:inline-flex;align-items:center;gap:5px;
+  border:1px solid transparent;transition:background .15s,color .15s,border-color .15s;
+}
+.chip b{font-weight:600;font-variant-numeric:tabular-nums}
+.chip:hover{background:var(--sunk)}
+.chip.on{background:var(--sunk);border-color:var(--line);color:var(--ink);font-weight:500}
+.chip .d{width:6px;height:6px;border-radius:50%}
+.d-err{background:var(--err)}.d-warn{background:var(--warn)}
+
+.ilist{overflow-y:auto;flex:1;min-height:0;padding:6px}
+.issue{
+  display:block;width:100%;text-align:left;position:relative;
+  padding:9px 10px 10px 12px;border-radius:7px;margin-bottom:2px;
+  transition:background .12s;
+}
+.issue:hover{background:var(--sunk)}
+.issue.on{background:#F4F1EA;box-shadow:inset 0 0 0 1px #E1DCD0}
+.issue::before{
+  content:"";position:absolute;left:4px;top:12px;bottom:12px;width:2px;border-radius:2px;
+  background:transparent;
+}
+.issue.on::before{background:var(--err)}
+.issue.on.w::before{background:var(--warn)}
+.i-top{display:flex;align-items:center;gap:6px;margin-bottom:4px}
+.lv{font-size:10px;line-height:1;padding:3px 5px;border-radius:3px;letter-spacing:.02em;font-weight:500}
+.lv.e{color:var(--err);background:var(--err-tint)}
+.lv.w{color:var(--warn);background:var(--warn-tint)}
+.rule{font-family:var(--mono);font-size:10.5px;color:var(--ink-3);letter-spacing:.01em}
+.i-line{margin-left:auto;font-size:10.5px;color:var(--ink-4);font-variant-numeric:tabular-nums}
+.i-msg{font-size:12.5px;line-height:1.55;color:var(--ink)}
+.i-fix{
+  margin-top:5px;font-size:11.5px;line-height:1.5;color:var(--ink-3);
+  padding-left:16px;position:relative;
+}
+.i-fix::before{content:"改";position:absolute;left:0;top:0;font-size:10px;color:var(--ok)}
+.i-fix.dismissed{opacity:.45;text-decoration:line-through}
+.issue.done{opacity:.4}
+.issue.done .i-msg{text-decoration:line-through}
+
+/* ─────────── 依据 ─────────── */
+.source{
+  background:var(--sunk);border-left:1px solid var(--line);
+  overflow-y:auto;padding:0 0 40px;min-height:0;
+}
+.src-head{
+  padding:13px 16px 12px;border-bottom:1px solid var(--line);
+  position:sticky;top:0;background:var(--sunk);z-index:2;
+}
+.src-head .k{font-size:10.5px;letter-spacing:.12em;color:var(--ink-3);text-transform:uppercase}
+.src-rule{
+  font-family:var(--mono);font-size:11px;color:#8C1D2F;margin-top:6px;
+  display:flex;align-items:center;gap:7px;
+}
+.src-rule .nm{font-family:var(--sans);color:var(--ink);font-weight:600;font-size:13px}
+.src-body{padding:16px}
+.src-sec{margin-bottom:20px}
+.src-sec:last-child{margin-bottom:0}
+.src-label{
+  font-size:10.5px;letter-spacing:.1em;color:var(--ink-4);text-transform:uppercase;
+  margin-bottom:7px;display:flex;align-items:center;gap:7px;
+}
+.src-label::after{content:"";flex:1;height:1px;background:var(--line)}
+.quote{
+  font-family:var(--serif);font-size:13px;line-height:1.95;color:#2A2A25;
+  padding:10px 12px;background:var(--surface);border-radius:6px;
+  border-left:2px solid #D8D3C6;white-space:pre-wrap;
+}
+.quote .hl{background:rgba(140,29,47,.09);box-shadow:inset 0 -1px 0 rgba(140,29,47,.35)}
+.cite{
+  font-size:11px;color:var(--ink-2);line-height:1.7;
+  display:flex;gap:6px;align-items:flex-start;
+}
+.cite svg{flex-shrink:0;margin-top:2px;color:var(--ink-4)}
+.note{
+  font-size:11.5px;line-height:1.75;color:var(--ink-2);
+  padding:9px 11px;background:rgba(140,29,47,.045);border-radius:6px;
+}
+.note b{font-weight:600;color:#8C1D2F}
+.empty-src{padding:40px 18px;text-align:center;color:var(--ink-4);font-size:11.5px;line-height:1.8}
+
+/* ─────────── 状态栏 ─────────── */
+.status{
+  display:flex;align-items:center;gap:14px;padding:0 14px;
+  background:var(--surface);border-top:1px solid var(--line);
+  font-size:11px;color:var(--ink-3);font-variant-numeric:tabular-nums;
+}
+.status b{font-weight:600;color:var(--ink-2)}
+.status .dot{width:5px;height:5px;border-radius:50%;background:var(--ok);flex-shrink:0}
+.status .sp{flex:1}
+.status .sep{width:1px;height:12px;background:var(--line)}
+
+/* 初次落位：一次，420ms，6px 位移。
+   关键：默认样式必须可见，隐藏起始态只挂在 html.run 下；
+   否则动画结束、run 类移除后，元素会回落到隐藏态（白屏）。 */
+html.run .anim{
+  opacity:0;transform:translateY(6px);
+  animation:rise .42s var(--ease) both;animation-delay:var(--d,0s);
+}
+@keyframes rise{to{opacity:1;transform:none}}
+
+@media (prefers-reduced-motion:reduce){
+  html.run .anim{animation:none;opacity:1;transform:none}
+  .prose p.flash{animation:none}
+}
+@media (max-width:1280px){
+  .workspace{grid-template-columns:60px minmax(0,1fr) 340px}
+  .source{border-left:1px solid var(--line)}
+  .source{display:none}
+}
+@media (max-width:980px){
+  .workspace{grid-template-columns:52px minmax(0,1fr)}
+  .issues{display:none}
+  .rail-item span{display:none}
+  .sheet{padding:24px 22px 70px}
+  .ln{display:none}
+}
+</style>
+</head>
+<body>
+
+<div class="app">
+
+  <header class="bar anim" style="--d:0s">
+    <div class="mark-crest">CITYU</div>
+    <div class="bar-name">校稿台</div>
+    <div class="bar-sub">媒体传讯处</div>
+    <div class="bar-sep"></div>
+    <div class="doc-chip">
+      <span class="ftype">DOC</span>
+      <b>bad-draft.md</b>
+      <span>待审</span>
+    </div>
+    <div class="bar-right">
+      <button class="btn" id="btnRerun">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round">
+          <path d="M21 12a9 9 0 1 1-2.6-6.4"/><path d="M21 4v5h-5"/>
+        </svg>
+        重新校验
+      </button>
+      <button class="btn btn-primary" id="btnExport">导出批注</button>
+      <div class="who">数</div>
+    </div>
+  </header>
+
+  <div class="workspace">
+
+    <nav class="rail anim" style="--d:.04s">
+      <button class="rail-item on" title="校稿台">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h11l5 5v11H4z"/><path d="M9 13l4-4 2 2-4 4H9z"/><path d="M15 4v5h5"/>
+        </svg>
+        <span>校稿</span>
+      </button>
+      <button class="rail-item" title="资源库">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M3 7h6l2 2h10v10H3z"/><path d="M3 7V5h6"/>
+        </svg>
+        <span>资源</span>
+      </button>
+      <button class="rail-item" title="规范条款">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M5 4h14v16H5z"/><path d="M8 8h8M8 12h8M8 16h5"/>
+        </svg>
+        <span>条款</span>
+      </button>
+      <button class="rail-item" title="模板中心">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h7v7H4zM13 4h7v4h-7zM13 10h7v10h-7zM4 13h7v7H4z"/>
+        </svg>
+        <span>模板</span>
+      </button>
+      <button class="rail-item rail-bottom" title="设置">
+        <svg width="17" height="17" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round">
+          <circle cx="12" cy="12" r="3"/>
+          <path d="M12 2v3M12 19v3M2 12h3M19 12h3M4.9 4.9l2.1 2.1M17 17l2.1 2.1M19.1 4.9L17 7M7 17l-2.1 2.1"/>
+        </svg>
+        <span>设置</span>
+      </button>
+    </nav>
+
+    <main class="doc anim" style="--d:.08s" id="docPane">
+      <div class="doc-head">
+        <span class="t">稿件正文</span>
+        <div class="r">
+          <label class="switch">
+            <input type="checkbox" id="toggleMarks" checked>
+            显示标记
+          </label>
+        </div>
+      </div>
+      <div class="sheet">
+        <div class="sheet-meta">
+          <span>送审 <b>2026-11-11 21:20</b></span>
+          <span class="sp"></span>
+          <span>报送模板 <b>通讯新闻报送模板 250324</b></span>
+          <span>正文 <b>512</b> 字</span>
+        </div>
+        <div class="prose" id="prose"></div>
+      </div>
+    </main>
+
+    <section class="issues anim" style="--d:.12s">
+      <div class="pane-head">
+        <div class="pane-title">
+          <h2>问题清单</h2>
+          <em id="issueCount"></em>
+        </div>
+        <div class="filters" id="filters">
+          <button class="chip on" data-f="all">全部 <b>17</b></button>
+          <button class="chip" data-f="e"><i class="d d-err"></i>错误 <b>11</b></button>
+          <button class="chip" data-f="w"><i class="d d-warn"></i>警告 <b>6</b></button>
+          <button class="chip" data-f="done">已忽略 <b>0</b></button>
+        </div>
+      </div>
+      <div class="ilist" id="ilist"></div>
+    </section>
+
+    <aside class="source anim" style="--d:.16s">
+      <div class="src-head">
+        <div class="k">判定依据</div>
+        <div class="src-rule" id="srcRule"></div>
+      </div>
+      <div class="src-body" id="srcBody"></div>
+    </aside>
+
+  </div>
+
+  <footer class="status anim" style="--d:.2s">
+    <span class="dot"></span>
+    <span>校验完成 · <b>19</b> 条规则生效</span>
+    <span class="sep"></span>
+    <span>命中 <b id="stHit">17</b>　错误 <b>11</b>　警告 <b>6</b></span>
+    <span class="sep"></span>
+    <span>已忽略 <b id="stDone">0</b></span>
+    <span class="sp"></span>
+    <span>对照组 good-draft.md <b>0</b> 项</span>
+    <span class="sep"></span>
+    <span>耗时 <b>0.4s</b></span>
+    <span class="sep"></span>
+    <span>规则库 v0.1</span>
+  </footer>
+
+</div>
+
+<script>
+/* ══════════════════════════════════════════════════════════
+   数据：全部来自 campus-kb 的真实校验结果（bad-draft.md → 17 项）
+   ══════════════════════════════════════════════════════════ */
+
+const DOC = [
+  { line:1, title:true, segs:[
+    { t:"智慧城市与新材料论坛在校举行", ids:["SUB-001","SUB-002","SUB-003"] }
+  ]},
+  { line:3, segs:[
+    { t:"11月11日" },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" " },
+    { t:"港城大（东莞）", ids:["NAME-001"] },
+    { t:"与松山湖材料实验室联合举办的“2026智慧城市与新材料论坛”在校园举行。本次论坛吸引来自粤港澳大湾区高校的" },
+    { t:"100 余位", ids:["PUNCT-002"] },
+    { t:"学者参加。" }
+  ]},
+  { line:5, segs:[
+    { t:"香港城市大学(东莞)", ids:["NAME-002"] },
+    { t:"校长段宝岩、执行校长鲁春、副校长" },
+    { t:"李娟", ids:["TITLE-001"] },
+    { t:"、协理副校长（运维）程军祥出席开幕式。段宝岩在致辞中表示" },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" 学校将持续推动跨学科合作" },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" 打造开放共享的科研平台。" }
+  ]},
+  { line:7, segs:[
+    { t:"论坛邀请来自" },
+    { t:"香港、澳门、台湾地区", ids:["SOEV-004"] },
+    { t:"的专家学者" },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" 以及" },
+    { t:"中、港、台", ids:["SOEV-002"] },
+    { t:"三地的青年学者共同研讨。澳门大学(University of Macau)教授陈志强作主题报告。陈志强先生指出" },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" 新材料是湾区产业升级的关键。" }
+  ]},
+  { line:9, segs:[
+    { t:"据了解" },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" 香港城市大学（东莞）在2027年QS世界大学排名位列" },
+    { t:"第63位", ids:["RANK-001"] },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" 在QS 2027排名中位列" },
+    { t:"52rd", ids:["ENG-001","RANK-001"] },
+    { t:"。明年论坛拟于" },
+    { t:"2027/03/15", ids:["PUNCT-003"] },
+    { t:"举行" },
+    { t:",", ids:["PUNCT-001"] },
+    { t:" 预期规模扩大至" },
+    { t:"300 人", ids:["PUNCT-002"] },
+    { t:"。" }
+  ]}
+];
+
+const ISSUES = [
+  { id:"SUB-001", lv:"e", line:1, msg:"标题未按「【投稿部门】投稿内容」格式填写",
+    fix:"【媒体传讯处】2026 智慧城市与新材料论坛在校举行" },
+  { id:"SUB-002", lv:"e", line:1, msg:"仅提交中文内容，但英文标题未标注 [Chinese]",
+    fix:"在英文标题末尾加 [Chinese]" },
+  { id:"SUB-003", lv:"w", line:1, msg:"未声明内容分类（通知动态 / 活动预告 / 大学要闻 / 媒体报道 / 他山之石）",
+    fix:"补充分类标记：活动预告" },
+  { id:"NAME-001", lv:"e", line:3, msg:"首次出现校名即使用简称「港城大（东莞）」",
+    fix:"首次出现改为「香港城市大学（东莞）」，后文再用简称" },
+  { id:"PUNCT-001", lv:"e", line:3, msg:"中文语境使用了半角逗号「,」（共 1 处）",
+    fix:"改用全角「，」" },
+  { id:"PUNCT-002", lv:"w", line:3, msg:"数字与单位之间不应有空格「100 余位」",
+    fix:"改为「100余位」" },
+  { id:"NAME-002", lv:"e", line:5, msg:"中文内容使用了半角括号「(东莞)」",
+    fix:"改为「香港城市大学（东莞）」" },
+  { id:"PUNCT-001", lv:"e", line:5, msg:"中文语境使用了半角逗号「,」（共 2 处）",
+    fix:"改用全角「，」" },
+  { id:"TITLE-001", lv:"w", line:5, msg:"「李娟」缺少规范职务限定（应为 副校长（学术））",
+    fix:"副校长（学术）李娟教授" },
+  { id:"PUNCT-001", lv:"e", line:7, msg:"中文语境使用了半角逗号「,」（共 2 处）",
+    fix:"改用全角「，」" },
+  { id:"SOEV-002", lv:"e", line:7, msg:"出现「中、港、台」并列提法，违反领土主权类表述规范",
+    fix:"改为「海峡两岸暨香港、澳门」" },
+  { id:"SOEV-004", lv:"w", line:7, msg:"「香港、澳门、台湾地区」未写明主权归属",
+    fix:"中国香港、中国澳门和中国台湾地区" },
+  { id:"ENG-001", lv:"e", line:9, msg:"英文序数词错误「52rd」",
+    fix:"52nd" },
+  { id:"PUNCT-001", lv:"e", line:9, msg:"中文语境使用了半角逗号「,」（共 3 处）",
+    fix:"改用全角「，」" },
+  { id:"RANK-001", lv:"e", line:9, msg:"文内 QS 2027 排名出现两个数值 [63, 52]",
+    fix:"须由媒体传讯处确认权威值后统一" },
+  { id:"PUNCT-002", lv:"w", line:9, msg:"数字与单位之间不应有空格「300 人」",
+    fix:"改为「300人」" },
+  { id:"PUNCT-003", lv:"w", line:9, msg:"日期「2027/03/15」不符合中文格式",
+    fix:"2027年3月15日" }
+];
+
+const RULES = {
+  "SUB-001":{ name:"标题格式", src:"电子通讯平台投稿须知 · 投稿字段",
+    quote:"标题须按「【投稿部门】投稿内容」的格式填写，不得只写事件名称。" },
+  "SUB-002":{ name:"英文标题标记", src:"电子通讯平台投稿须知 · 投稿字段",
+    quote:"仅提交中文内容的稿件，须在英文标题末尾标注 [Chinese]。" },
+  "SUB-003":{ name:"内容分类", src:"电子通讯平台投稿须知 · 内容分类",
+    quote:"投稿须勾选以下分类之一：通知动态、活动预告、大学要闻、媒体报道、他山之石。" },
+  "NAME-001":{ name:"校名首次出现用全称", src:"常用表述规范手册 2026.05 · 一、学校定位与基本信息",
+    quote:"全称：香港城市大学（东莞）——在文章首次提及需要用全称。\n在稿件开头首次出现校名时，须使用全称。",
+    note:"手册同时列出两个简称（港城莞 / 港城大（东莞））并注明后者「正式感更强，新闻稿件首选」。规则据此判定：问题不在简称本身，而在<b>首次出现即用简称</b>。" },
+  "NAME-002":{ name:"中文括号须用全角", src:"常用表述规范手册 2026.05 · 一、学校定位与基本信息",
+    quote:"英文名称请使用半角括号 ( )，括号前须空一格；中文内容使用全角括号（）。" },
+  "TITLE-001":{ name:"职务称谓完整", src:"常用表述规范手册 2026.05 ·（2）校领导职务全称对照",
+    quote:"使用「职务全称 + 姓名」的形式。后文可用「职务简称 + 姓名」或「姓 + 职务」。\n例：校长段宝岩院士、执行校长鲁春教授、副校长（学术）李娟教授。",
+    note:"规则比对职务全称对照表，发现「副校长李娟」缺少「（学术）」限定，与手册示例不一致。" },
+  "SOEV-002":{ name:"禁用「中、港、台」并列", src:"常用表述规范手册 2026.05 · 3. 港澳台与领土主权类描述",
+    quote:"不得出现「中、港、台」「中、澳、台」「中、港、澳、台」之类的表述，应称为「海峡两岸暨香港」「海峡两岸暨澳门」「海峡两岸暨香港、澳门」。不使用「两岸三（四）地」的提法。" },
+  "SOEV-004":{ name:"正式文件写明主权归属", src:"常用表述规范手册 2026.05 · 3. 港澳台与领土主权类描述",
+    quote:"中国与中国台湾、中国香港、中国澳门地区同时出现时，不得将香港、澳门与中国并列提及。",
+    note:"手册另处允许「来自香港、澳门、台湾地区的学生」为标准措辞，故本项定级为<b>警告</b>而非错误——同一手册内存在口径差异。" },
+  "PUNCT-001":{ name:"中文语境用全角标点", src:"常用表述规范手册 2026.05 · 三、常用信息：数字与标点符号使用",
+    quote:"英文语境使用半角标点（. , ; : \"\" () ? !）；中文语境对应使用全角。",
+    note:"同一行多处命中合并为一条，避免同一规则重复列出稀释问题清单。" },
+  "PUNCT-002":{ name:"数字与单位之间不加空格", src:"常用表述规范手册 2026.05 · 三、常用信息：数字与标点符号使用",
+    quote:"数量与单位、量词之间不加空格，如「100余位」「300人」。" },
+  "PUNCT-003":{ name:"日期用中文格式", src:"常用表述规范手册 2026.05 · 三、常用信息：数字与标点符号使用",
+    quote:"中文稿件日期写作「2027年3月15日」，不写作 2027/03/15。" },
+  "ENG-001":{ name:"英文序数词", src:"常用表述规范手册 2026.05 · 三、常用信息：英文使用规范",
+    quote:"英文序数词须正确：1st / 2nd / 3rd / 4th … 52nd。",
+    note:"手册英文版自身写作 <b>52rd</b>，属手册笔误。规则按正确语法判定，<b>不跟随手册错误</b>——否则会把错误固化成标准。" },
+  "RANK-001":{ name:"排名数据一致性", src:"常用表述规范手册 2026.05 · 一、学校定位与基本信息（中英对照）",
+    quote:"中文版：香港城市大学在 2027 年 QS 世界大学排名位列第 63 位。\n英文版：CityUHK ranks 52rd globally in the 2027 QS World University Rankings.",
+    note:"手册中英文版本对同一排名给出 63 / 52 两个数值。规则只检出冲突并上报，<b>不自行判定哪个正确</b>——权威值须由媒体传讯处确认。" }
+};
+
+/* ══════════════════════════════════════════════════════════ */
+
+const state = { sel:-1, filter:"all", done:new Set(), marks:true };
+
+const $ = s => document.querySelector(s);
+const esc = s => s.replace(/[&<>]/g, c => ({"&":"&amp;","<":"&lt;",">":"&gt;"}[c]));
+
+/* 建立 段落段 → 问题索引 的映射 */
+function idxOf(line, id){
+  return ISSUES.findIndex(x => x.id === id && x.line === line);
+}
+
+function renderDoc(){
+  const pane = $("#prose");
+  pane.classList.toggle("plain", !state.marks);
+  pane.innerHTML = DOC.map(p => {
+    const segs = p.segs.map(s => {
+      if(!s.ids) return esc(s.t);
+      const ids = [];
+      s.ids.forEach(id => {
+        const k = idxOf(p.line, id);
+        if(k >= 0) ids.push(k);
+      });
+      const lv = ids.some(k => ISSUES[k].lv === "e") ? "" : " w";
+      return `<span class="mk${lv}" data-ii="${ids.join(",")}">${esc(s.t)}</span>`;
+    }).join("");
+    return `<p${p.title ? ' class="title"' : ''} data-line="${p.line}"><span class="ln">${p.line}</span>${segs}</p>`;
+  }).join("");
+  paintSelection();
+}
+
+function visibleIssues(){
+  return ISSUES.map((it, i) => ({ it, i })).filter(({ it, i }) => {
+    if(state.filter === "done") return state.done.has(i);
+    if(state.done.has(i)) return false;
+    if(state.filter === "e") return it.lv === "e";
+    if(state.filter === "w") return it.lv === "w";
+    return true;
+  });
+}
+
+function renderList(){
+  const list = visibleIssues();
+  $("#issueCount").textContent = `${ISSUES.length - state.done.size} 项待处理 / 共 ${ISSUES.length} 项`;
+  $("#ilist").innerHTML = list.length ? list.map(({ it, i }) => `
+    <button class="issue ${it.lv === "w" ? "w" : ""} ${state.sel === i ? "on" : ""} ${state.done.has(i) ? "done" : ""}" data-i="${i}">
+      <div class="i-top">
+        <span class="lv ${it.lv}">${it.lv === "e" ? "错误" : "警告"}</span>
+        <span class="rule">${it.id}</span>
+        <span class="i-line">第 ${it.line} 行</span>
+      </div>
+      <div class="i-msg">${esc(it.msg)}</div>
+      <div class="i-fix">${esc(it.fix)}</div>
+    </button>`).join("")
+    : `<div class="empty-src">这一组没有条目</div>`;
+
+  $("#stDone").textContent = state.done.size;
+  $("#stHit").textContent = ISSUES.length - state.done.size;
+  const d = $("#filters [data-f='done'] b");
+  if(d) d.textContent = state.done.size;
+}
+
+function paintSelection(){
+  document.querySelectorAll(".mk").forEach(el => {
+    const ids = (el.dataset.ii || "").split(",").filter(Boolean).map(Number);
+    el.classList.toggle("on", ids.includes(state.sel));
+  });
+  document.querySelectorAll(".issue").forEach(el => {
+    el.classList.toggle("on", +el.dataset.i === state.sel);
+  });
+}
+
+function renderSource(){
+  const it = ISSUES[state.sel];
+  const box = $("#srcBody"), head = $("#srcRule");
+  if(!it){
+    head.innerHTML = "";
+    box.innerHTML = `<div class="empty-src">在左侧问题清单中选一条<br>这里会显示它出自哪份规范、哪一章</div>`;
+    return;
+  }
+  const r = RULES[it.id];
+  head.innerHTML = `<span>${it.id}</span><span class="nm">${esc(r.name)}</span>`;
+  box.innerHTML = `
+    <div class="src-sec">
+      <div class="src-label">判定</div>
+      <div class="cite" style="font-size:12px;line-height:1.75">${esc(it.msg)}</div>
+    </div>
+    <div class="src-sec">
+      <div class="src-label">原文摘录</div>
+      <div class="quote">${esc(r.quote).replace(/\n/g,"<br>")}</div>
+    </div>
+    <div class="src-sec">
+      <div class="src-label">出处</div>
+      <div class="cite">
+        <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M6 3h9l5 5v13H6z"/><path d="M15 3v5h5"/>
+        </svg>
+        <span>${esc(r.src)}</span>
+      </div>
+    </div>
+    ${r.note ? `<div class="src-sec"><div class="note">${r.note}</div></div>` : ""}`;
+}
+
+function select(i, scroll){
+  state.sel = i;
+  renderList();
+  paintSelection();
+  renderSource();
+  if(scroll){
+    const it = ISSUES[i];
+    const p = document.querySelector(`.prose p[data-line="${it.line}"]`);
+    if(p){
+      p.scrollIntoView({behavior:"smooth", block:"center"});
+      p.classList.remove("flash");
+      void p.offsetWidth;
+      p.classList.add("flash");
+    }
+  }
+}
+
+/* 事件 */
+$("#ilist").addEventListener("click", e => {
+  const el = e.target.closest(".issue");
+  if(!el) return;
+  const i = +el.dataset.i;
+  if(state.sel === i){                        // 再点一次 = 忽略/恢复
+    state.done.has(i) ? state.done.delete(i) : state.done.add(i);
+    renderList(); paintSelection();
+    if(state.done.has(i) && state.filter !== "done") select(-1, false);
+    return;
+  }
+  select(i, true);
+});
+
+$("#prose").addEventListener("click", e => {
+  const el = e.target.closest(".mk");
+  if(!el || !state.marks) return;
+  const ids = (el.dataset.ii || "").split(",").filter(Boolean);
+  if(ids.length) select(+ids[0], false);
+});
+
+$("#filters").addEventListener("click", e => {
+  const c = e.target.closest(".chip");
+  if(!c) return;
+  state.filter = c.dataset.f;
+  document.querySelectorAll("#filters .chip").forEach(x => x.classList.toggle("on", x === c));
+  renderList();
+});
+
+$("#toggleMarks").addEventListener("change", e => {
+  state.marks = e.target.checked;
+  renderDoc();
+});
+
+$("#btnRerun").addEventListener("click", () => {
+  state.done.clear();
+  state.filter = "all";
+  document.querySelectorAll("#filters .chip").forEach((x, k) => x.classList.toggle("on", k === 0));
+  renderList();
+  select(-1, false);
+  $("#stHit").textContent = ISSUES.length;
+});
+
+$("#btnExport").addEventListener("click", () => {
+  $("#btnExport").textContent = "已生成 · 17 条批注";
+  setTimeout(() => { $("#btnExport").textContent = "导出批注"; }, 1600);
+});
+
+document.addEventListener("keydown", e => {
+  if(e.key === "Escape"){ select(-1, false); return; }
+  if(e.key !== "j" && e.key !== "k" && e.key !== "ArrowDown" && e.key !== "ArrowUp") return;
+  if(e.target.matches("input")) return;
+  e.preventDefault();
+  const list = visibleIssues();
+  if(!list.length) return;
+  const cur = list.findIndex(x => x.i === state.sel);
+  const dir = (e.key === "j" || e.key === "ArrowDown") ? 1 : -1;
+  const next = cur < 0 ? (dir > 0 ? 0 : list.length - 1)
+                       : Math.min(Math.max(cur + dir, 0), list.length - 1);
+  select(list[next].i, true);
+});
+
+/* 入场动画收尾：最长动画 .20s 延迟 + .42s 时长 = .62s，900ms 足够。
+   移除 run 后元素回落到默认的可见样式，不影响最终呈现。 */
+setTimeout(() => document.documentElement.classList.remove("run"), 900);
+
+renderDoc();
+renderList();
+select(3, false);   // 默认选中 NAME-001：最能说明「规范不是靠人记」的一条
+</script>
+</body>
+</html>

@@ -1,0 +1,29 @@
+{
+  "source": "香港城市大学（东莞）常用表述规范手册 2026.05｜三、常用信息：英文使用规范",
+  "rules": [
+    {
+      "id": "ENG-001",
+      "category": "英文",
+      "severity": "error",
+      "type": "ordinal_suffix",
+      "desc": "英文序数词后缀须与数字匹配",
+      "params": {},
+      "suggestion": "1st / 2nd / 3rd / 4th；11-13 统一 th"
+    },
+    {
+      "id": "ENG-002",
+      "category": "英文",
+      "severity": "info",
+      "type": "dictionary",
+      "desc": "拼写采用英式英语（符合香港标准）",
+      "params": {
+        "pairs": [
+          { "wrong": "program(?!me)", "right": "programme", "regex": true, "exclude": "computer program|program file", "note": "英式拼写：programme（计算机程序除外）" },
+          { "wrong": "organization", "right": "organisation", "regex": false, "exclude": "", "note": "英式拼写" },
+          { "wrong": "center", "right": "centre", "regex": false, "exclude": "Center for|Center of", "note": "英式拼写，机构专名除外" }
+        ]
+      },
+      "suggestion": "统一英式拼写"
+    }
+  ]
+}

@@ -1,0 +1,19 @@
+# 依赖与构建产物
+node_modules/
+dist/
+__pycache__/
+*.pyc
+
+# 编辑器 / 系统
+.DS_Store
+*.local
+
+# Vite 加载配置时的临时文件
+vite.config.ts.timestamp-*.mjs
+
+# 工具链留下的临时残留文件
+iasa4tz8
+zh7_c27t
+
+# 个人工作记录（保留设计语言 skill，不上传日志）
+.workbuddy/memory/

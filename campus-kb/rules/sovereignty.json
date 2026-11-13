@@ -1,0 +1,68 @@
+{
+  "source": "香港城市大学（东莞）常用表述规范手册 2026.05｜三、常用信息：港澳台与领土主权",
+  "rules": [
+    {
+      "id": "SOEV-001",
+      "category": "港澳台表述",
+      "severity": "error",
+      "type": "dictionary",
+      "desc": "Macao 为联合国及中国官方标准拼写，机构专有名词除外",
+      "params": {
+        "pairs": [
+          {
+            "wrong": "Macau",
+            "right": "Macao",
+            "regex": false,
+            "exclude": "University of Macau|澳門大學|澳门大学",
+            "note": "机构或组织名称等专有名词除外（如 University of Macau）"
+          }
+        ]
+      },
+      "suggestion": "正式文本统一写作 Macao"
+    },
+    {
+      "id": "SOEV-002",
+      "category": "港澳台表述",
+      "severity": "error",
+      "type": "forbid_pattern",
+      "desc": "不得将中国内地与中国港澳台并列，不得使用「两岸三（四）地」提法",
+      "params": {
+        "pattern": "中[、，,/]\\s*港\\s*[、，,/]\\s*台|中[、，,/]\\s*澳\\s*[、，,/]\\s*台|两岸[三四]地",
+        "message": "出现「中、港、台」类并列提法，违反领土主权类表述规范"
+      },
+      "suggestion": "改为「海峡两岸暨香港」「海峡两岸暨澳门」「港澳台地区」"
+    },
+    {
+      "id": "SOEV-003",
+      "category": "港澳台表述",
+      "severity": "error",
+      "type": "require_context",
+      "desc": "集体表述港澳台时须强调「地区」或「同胞」，避免被理解为「国家」",
+      "params": {
+        "terms": [
+          { "term": "港澳台", "require": ["地区", "同胞", "暨"] }
+        ]
+      },
+      "suggestion": "改为「港澳台地区」「港澳台同胞」"
+    },
+    {
+      "id": "SOEV-004",
+      "category": "港澳台表述",
+      "severity": "warn",
+      "type": "dictionary",
+      "desc": "正式文件须标明「中国香港」「中国澳门」「中国台湾」",
+      "params": {
+        "pairs": [
+          {
+            "wrong": "香港、澳门、台湾地区|香港、澳门和台湾地区",
+            "right": "中国香港、中国澳门和中国台湾地区",
+            "regex": true,
+            "exclude": "中国香港|中国澳门|中国台湾",
+            "note": "正式文件中应写明主权归属"
+          }
+        ]
+      },
+      "suggestion": "写作「中国香港、中国澳门和中国台湾地区」或「港澳台地区」"
+    }
+  ]
+}

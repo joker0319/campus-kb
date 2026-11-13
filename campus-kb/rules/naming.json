@@ -1,0 +1,35 @@
+{
+  "source": "香港城市大学（东莞）常用表述规范手册 2026.05｜一、学校定位与基本信息",
+  "rules": [
+    {
+      "id": "NAME-001",
+      "category": "校名",
+      "severity": "error",
+      "type": "first_mention_fullname",
+      "desc": "稿件首次出现校名须用全称，不得首次即用简称",
+      "params": {
+        "full": ["香港城市大学（东莞）", "香港城市大学(东莞)"],
+        "alias": ["港城大（东莞）", "港城莞", "港城大(东莞)", "CityUHK (DG)"]
+      },
+      "suggestion": "首次出现改为「香港城市大学（东莞）」，后续再用简称"
+    },
+    {
+      "id": "NAME-002",
+      "category": "校名",
+      "severity": "error",
+      "type": "fullwidth_paren",
+      "desc": "中文校名须使用全角括号（ ）",
+      "params": {},
+      "suggestion": "改为「香港城市大学（东莞）」"
+    },
+    {
+      "id": "NAME-003",
+      "category": "校名",
+      "severity": "warn",
+      "type": "halfwidth_paren_space",
+      "desc": "英文校名须使用半角括号，且括号前空一格",
+      "params": { "anchor": "City University of Hong Kong" },
+      "suggestion": "City University of Hong Kong (Dongguan)"
+    }
+  ]
+}

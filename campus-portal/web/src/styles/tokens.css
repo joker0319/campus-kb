@@ -1,0 +1,35 @@
+/* 设计 token —— 唯一来源。所有组件只引用变量，不写字面量颜色。 */
+:root {
+  /* 纸与墨 */
+  --paper: #fcfbf8;
+  --surface: #ffffff;
+  --rail: #ffffff;
+  --sunk: #f7f6f1;
+  --ink: #191917;
+  --ink-2: #54514a;
+  --ink-3: #8b877c;
+  --ink-4: #a9a49a;
+  --line: #e6e3da;
+  --line-2: #efede6;
+
+  /* 校样三个语义色，不引入装饰色 */
+  --err: #a32b24;
+  --err-tint: rgba(163, 43, 36, 0.085);
+  --warn: #8a6a1f;
+  --warn-tint: rgba(138, 106, 31, 0.1);
+  --ok: #4a6b4a;
+  --brand: #8c1d2f;
+  --brand-tint: rgba(140, 29, 47, 0.055);
+  --mark-on: #f4f1ea;
+  --mark-on-line: #e1dcd0;
+
+  /* 排版 */
+  --sans:
+    'PingFang SC', 'HarmonyOS Sans SC', 'Hiragino Sans GB', 'Microsoft YaHei', system-ui,
+    -apple-system, sans-serif;
+  --serif: 'Songti SC', 'Noto Serif SC', 'Source Han Serif SC', Georgia, serif;
+  --mono: 'SF Mono', ui-monospace, Menlo, Consolas, monospace;
+
+  /* 动效 */
+  --ease: cubic-bezier(0.22, 1, 0.36, 1);
+}

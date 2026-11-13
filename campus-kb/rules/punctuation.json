@@ -1,0 +1,34 @@
+{
+  "source": "香港城市大学（东莞）常用表述规范手册 2026.05｜三、常用信息：数字与标点符号使用",
+  "rules": [
+    {
+      "id": "PUNCT-001",
+      "category": "标点",
+      "severity": "error",
+      "type": "halfwidth_punct_in_cn",
+      "desc": "中文语境须使用全角标点",
+      "params": {},
+      "suggestion": "改用全角标点"
+    },
+    {
+      "id": "PUNCT-002",
+      "category": "数字",
+      "severity": "warn",
+      "type": "no_space_number_unit",
+      "desc": "中文数字与单位之间不加空格",
+      "params": {
+        "units": ["公里", "千米", "米", "千克", "公斤", "吨", "项", "个", "名", "位", "人", "次", "年", "天", "余位", "余人", "余项", "余人次"]
+      },
+      "suggestion": "如「100公里」而非「100 公里」"
+    },
+    {
+      "id": "PUNCT-003",
+      "category": "日期",
+      "severity": "warn",
+      "type": "date_format",
+      "desc": "中文日期统一中文格式：YYYY年M月D日",
+      "params": {},
+      "suggestion": "如「2025年10月27日」"
+    }
+  ]
+}
