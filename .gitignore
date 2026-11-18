@@ -3,6 +3,8 @@ node_modules/
 dist/
 __pycache__/
 *.pyc
+.venv/
+.pytest_cache/
 
 # 编辑器 / 系统
 .DS_Store

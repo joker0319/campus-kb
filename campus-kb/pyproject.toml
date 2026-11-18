@@ -1,0 +1,23 @@
+[project]
+name = "campus-kb-api"
+version = "0.1.0"
+description = "校园投稿质量门 API：FastAPI 封装 checker.py 规则引擎"
+requires-python = ">=3.12"
+dependencies = [
+    "fastapi>=0.115",
+    "uvicorn[standard]>=0.32",
+]
+
+[dependency-groups]
+dev = [
+    "pytest>=8.3",
+    "httpx>=0.28",
+]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
+pythonpath = ["."]
+
+[tool.pyright]
+include = ["api", "checker.py"]
+typeCheckingMode = "strict"

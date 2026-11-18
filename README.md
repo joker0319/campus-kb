@@ -32,9 +32,10 @@
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
+| 薄后端（FastAPI） | 🟡 首版可用 | `/api/review`、`/api/rules`、`/api/health`，10 个 pytest 用例锁基线；决策见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 校稿台前端 | 🟡 界面完成，数据为内置样例 | 三栏核对、筛选、忽略、键盘导航均已实现；接口未接 |
 | 首页 | ✅ 完成 | 3D 稿件卡轮播（3 个真实命中案例）、墨点小助手、实测数据条 |
-| 后端 / 数据库 | ⏳ 未开始 | 选型已定稿，见 [`campus-portal/docs/tech-selection.md`](campus-portal/docs/tech-selection.md) |
+| 后端 / 数据库 | ⏳ 数据库未开始 | 后端已定 Python（FastAPI），见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | docx 上传解析 / 导出带批注文件 | ⏳ 未开始 | 目前只支持粘贴纯文本 |
 | 模板填槽出初稿 | ⏳ 规划中（P1） | 依赖后端与 LLM 出网条件 |
 
@@ -50,8 +51,10 @@
 
 ```
 .
-├── campus-kb/                     # 规则引擎（校验的唯一事实来源）
+├── campus-kb/                     # 规则引擎 + FastAPI 薄后端（校验的唯一事实来源）
 │   ├── checker.py                 # 引擎：加规则只改 JSON，不改代码
+│   ├── api/                       # FastAPI 封装：/api/review、/api/rules、/api/health
+│   ├── tests/                     # pytest：契约 + bad 17 / good 0 基线断言
 │   ├── rules/                     # naming / title / sovereignty / punctuation /
 │   │                              # english / submission / rank / layout
 │   ├── samples/                   # bad-draft.md / good-draft.md
@@ -81,7 +84,16 @@ python3 checker.py samples/bad-draft.md --json         # 供其他系统调用
 
 退出码：存在 `error` 时返回 `1`，可直接接 CI 或投稿平台的前置校验。无第三方依赖。
 
-### 4.2 前端
+### 4.2 后端（FastAPI）
+
+```bash
+cd campus-kb
+uv sync                                        # fastapi / uvicorn / pytest / httpx
+uv run pytest                                  # 10 个用例，含 bad 17 / good 0 基线
+uv run uvicorn api.main:app --reload --port 8000
+```
+
+### 4.3 前端
 
 ```bash
 cd campus-portal/web
@@ -167,7 +179,7 @@ npm run dev      # http://127.0.0.1:5173
 
 ## 9. 下一步
 
-1. **薄后端**：`POST /review`、`GET /drafts`，前端换成真实接口；
+1. **前端接后端**：`data/content.ts` 换成调 `/api/review`（FastAPI 已就绪），OpenAPI 生成前端类型；
 2. **投稿链路**：docx 上传解析、导出带批注的 docx、三审三校流水；
 3. **检索增强**：规范原文入库，支持「这条规范怎么写的」问答并带出处；
 4. **闭环**：审核不通过的原因回流，补充规则。

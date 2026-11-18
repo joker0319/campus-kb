@@ -20,11 +20,31 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 
 退出码：有 `error` 返回 1，可直接接 CI 或投稿平台的前置校验。
 
+## HTTP API（2026-11-18 起）
+
+同一引擎的 FastAPI 封装，供校稿台前端调用：
+
+```bash
+uv sync                                                   # 安装依赖（fastapi/uvicorn/pytest/httpx）
+uv run uvicorn api.main:app --reload --port 8000          # 启动
+uv run pytest                                             # 10 个用例，含 bad 17 / good 0 基线断言
+```
+
+| 接口 | 说明 |
+| --- | --- |
+| `GET /api/health` | 存活检查 |
+| `GET /api/rules` | 19 条规则 + 出处（total / skipped / rules[]） |
+| `POST /api/review` | `{ content }` → `{ findings[], counts, ruleCount }`；finding.key 为 `ruleId@line`，同规则同行多次命中追加 `-2/-3` |
+
+severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为 `warn、info → warning`，`counts` 保留原始分档。决策见 `campus-portal/docs/adr-002-python-backend.md`。
+
 ## 目录
 
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
+├── api/                    # FastAPI 薄封装（main.py + schemas.py）
+├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文
 │   ├── naming.json         # 校名（首次全称、全角括号、英文空格）
 │   ├── title.json          # 头衔职务对照
