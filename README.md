@@ -26,6 +26,7 @@
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件送审，按后端精确命中动态标红；档案检索接 `/api/search` |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
 | 助手页 `#/assistant` | ✅ 界面壳 | 对话界面与三项能力（问规范 / 查档案 / 校稿件）已搭好，工具接入中、输入禁用、不伪装回答 |
+| 前端部署（Vercel） | ✅ 静态站 | Vercel 导入 `campus-portal/web`，Root Directory 设为 `campus-portal/web`（见该目录 `vercel.json`）；仅前端，线上无 `/api` 后端 |
 | 数据库 / 投稿流程 | ⏳ 未开始 | 选型见 [ADR-001](campus-portal/docs/tech-selection.md) |
 | docx 解析 / 导出批注 | ⏳ 未开始 | 目前只支持粘贴纯文本 |
 
