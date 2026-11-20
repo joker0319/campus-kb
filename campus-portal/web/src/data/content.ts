@@ -1,9 +1,8 @@
-import type { Draft, Issue, Rule } from '../types';
+import type { Draft, Rule } from '../types';
 
 /**
- * 内容全部来自 campus-kb 的真实校验结果：
- * 稿件 samples/bad-draft.md → checker.py（19 条规则）→ 17 项命中（错误 11 / 警告 6）。
- * 接入后端时，这里替换为 `GET /api/drafts/:id/review` 的响应即可，组件层不动。
+ * RULES / DRAFT 是规范出处与稿件片段（供依据栏与标红定位），不是校验结果。
+ * 命中来自后端 POST /api/review，见 lib/api.ts 与 hooks/useReviewRequest.ts。
  */
 
 export const RULES: readonly Rule[] = [
@@ -97,145 +96,6 @@ export const RULES: readonly Rule[] = [
   },
 ];
 
-export const ISSUES: readonly Issue[] = [
-  {
-    key: 'SUB-001@1',
-    ruleId: 'SUB-001',
-    severity: 'error',
-    line: 1,
-    message: '标题未按「【投稿部门】投稿内容」格式填写',
-    fix: '【媒体传讯处】2026 智慧城市与新材料论坛在校举行',
-  },
-  {
-    key: 'SUB-002@1',
-    ruleId: 'SUB-002',
-    severity: 'error',
-    line: 1,
-    message: '仅提交中文内容，但英文标题未标注 [Chinese]',
-    fix: '在英文标题末尾加 [Chinese]',
-  },
-  {
-    key: 'SUB-003@1',
-    ruleId: 'SUB-003',
-    severity: 'warning',
-    line: 1,
-    message: '未声明内容分类（通知动态 / 活动预告 / 大学要闻 / 媒体报道 / 他山之石）',
-    fix: '补充分类标记：活动预告',
-  },
-  {
-    key: 'NAME-001@3',
-    ruleId: 'NAME-001',
-    severity: 'error',
-    line: 3,
-    message: '首次出现校名即使用简称「港城大（东莞）」',
-    fix: '首次出现改为「香港城市大学（东莞）」，后文再用简称',
-  },
-  {
-    key: 'PUNCT-001@3',
-    ruleId: 'PUNCT-001',
-    severity: 'error',
-    line: 3,
-    message: '中文语境使用了半角逗号「,」（共 1 处）',
-    fix: '改用全角「，」',
-  },
-  {
-    key: 'PUNCT-002@3',
-    ruleId: 'PUNCT-002',
-    severity: 'warning',
-    line: 3,
-    message: '数字与单位之间不应有空格「100 余位」',
-    fix: '改为「100余位」',
-  },
-  {
-    key: 'NAME-002@5',
-    ruleId: 'NAME-002',
-    severity: 'error',
-    line: 5,
-    message: '中文内容使用了半角括号「(东莞)」',
-    fix: '改为「香港城市大学（东莞）」',
-  },
-  {
-    key: 'PUNCT-001@5',
-    ruleId: 'PUNCT-001',
-    severity: 'error',
-    line: 5,
-    message: '中文语境使用了半角逗号「,」（共 2 处）',
-    fix: '改用全角「，」',
-  },
-  {
-    key: 'TITLE-001@5',
-    ruleId: 'TITLE-001',
-    severity: 'warning',
-    line: 5,
-    message: '「李娟」缺少规范职务限定（应为 副校长（学术））',
-    fix: '副校长（学术）李娟教授',
-  },
-  {
-    key: 'PUNCT-001@7',
-    ruleId: 'PUNCT-001',
-    severity: 'error',
-    line: 7,
-    message: '中文语境使用了半角逗号「,」（共 2 处）',
-    fix: '改用全角「，」',
-  },
-  {
-    key: 'SOEV-002@7',
-    ruleId: 'SOEV-002',
-    severity: 'error',
-    line: 7,
-    message: '出现「中、港、台」并列提法，违反领土主权类表述规范',
-    fix: '改为「海峡两岸暨香港、澳门」',
-  },
-  {
-    key: 'SOEV-004@7',
-    ruleId: 'SOEV-004',
-    severity: 'warning',
-    line: 7,
-    message: '「香港、澳门、台湾地区」未写明主权归属',
-    fix: '中国香港、中国澳门和中国台湾地区',
-  },
-  {
-    key: 'ENG-001@9',
-    ruleId: 'ENG-001',
-    severity: 'error',
-    line: 9,
-    message: '英文序数词错误「52rd」',
-    fix: '52nd',
-  },
-  {
-    key: 'PUNCT-001@9',
-    ruleId: 'PUNCT-001',
-    severity: 'error',
-    line: 9,
-    message: '中文语境使用了半角逗号「,」（共 3 处）',
-    fix: '改用全角「，」',
-  },
-  {
-    key: 'RANK-001@9',
-    ruleId: 'RANK-001',
-    severity: 'error',
-    line: 9,
-    message: '文内 QS 2027 排名出现两个数值 [63, 52]',
-    fix: '须由媒体传讯处确认权威值后统一',
-  },
-  {
-    key: 'PUNCT-002@9',
-    ruleId: 'PUNCT-002',
-    severity: 'warning',
-    line: 9,
-    message: '数字与单位之间不应有空格「300 人」',
-    fix: '改为「300人」',
-  },
-  {
-    key: 'PUNCT-003@9',
-    ruleId: 'PUNCT-003',
-    severity: 'warning',
-    line: 9,
-    message: '日期「2027/03/15」不符合中文格式',
-    fix: '2027年3月15日',
-  },
-];
-
 export const DRAFT: Draft = [
   {
     line: 1,
@@ -307,3 +167,7 @@ export const DRAFT: Draft = [
     ],
   },
 ];
+
+/** 送审正文（纯文本）：DRAFT 逐段还原，作为 POST /api/review 的输入。 */
+export const DRAFT_TEXT =
+  DRAFT.map((para) => para.segments.map((seg) => seg.text).join('')).join('\n\n') + '\n';

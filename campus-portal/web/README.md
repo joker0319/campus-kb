@@ -8,7 +8,7 @@
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # 类型检查 + 生产构建 → dist/
-npm test           # 39 个用例：纯函数 21 + 组件交互 18
+npm test           # 49 个用例（含真实接口夹具测试）
 npm run lint       # ESLint（含类型感知规则）
 npm run format     # Prettier 格式化
 npm run check      # 类型 + lint + 格式 + 测试，提交前跑这个
@@ -30,22 +30,27 @@ src/
   pages/Landing.tsx     首页（全套动效编排）
   pages/Desk.tsx        校稿台（克制模式）
   types.ts              领域模型（Issue 用 `${ruleId}@${line}` 作稳定 key）
-  data/content.ts       稿件 / 17 条命中 / 13 条规则定义，全部来自 campus-kb 实测
+  data/content.ts       送审稿件与规则出处（依据栏）；命中不再内置
   lib/review.ts         纯函数：筛选、计数、键盘导航、标记严重度
+  lib/api.ts            POST /api/review：finding → Issue 映射、严重度收敛
   lib/segments.ts       按命中词切分正文（split + 捕获组，比 replace 安全）
   lib/countUp.ts        数字滚动（进度钳制，防 rAF 负时间差）
-  hooks/useReview.ts    useReducer 状态机
+  hooks/useReview.ts    useReducer 状态机（选中/筛选/忽略/导航）
+  hooks/useReviewRequest.ts  校验请求：loading/ready/error + 重试/取消
   hooks/useMediaQuery.ts
   components/           Shell(AppBar/Rail/StatusBar/Tabs)、DocumentPane、IssueList、EvidencePane
-                        CaseStage（首页 3D 稿件卡轮播）、PetMascot（墨点小助手）
+                        CaseStage（首页 3D 稿件卡轮播）、PetMascot（墨点小助手）、CorpusSearch（档案检索抽屉）
   styles/tokens.css     设计 token 唯一来源
   styles/*.module.css   各页样式
 ```
 
-## 接入后端要改的地方
+## 与后端的接口
 
-只有 `data/content.ts`：把常量换成 `POST /api/review` 的响应，字段对应
-`Issue[]` / `Paragraph[]` / `Rule[]`，组件层与状态机不用动。
+校稿台启动即 `POST /api/review`（正文来自 `DRAFT_TEXT`），命中经 `lib/api.ts` 映射为 `Issue[]`；
+后端 key `ruleId@line` 与正文片段标注直接对齐，组件层不用改。
+Vite 开发代理把 `/api` 转发到 `127.0.0.1:8000`（FastAPI）。
+左栏「资源」打开档案检索抽屉，调 `GET /api/search`。
+接口失败显示错误态与「重试」，不回落假数据；测试用 `src/test/fixtures/review.json`（真实 API 响应）mock fetch。
 
 ## 刻意的取舍
 

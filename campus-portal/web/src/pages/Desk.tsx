@@ -1,7 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DRAFT, ISSUES, RULES } from '../data/content';
+import { DRAFT, RULES } from '../data/content';
 import { buildIssueMap } from '../lib/review';
 import { useReview } from '../hooks/useReview';
+import { useReviewRequest } from '../hooks/useReviewRequest';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { AppBar, MobileTabs, Rail, StatusBar } from '../components/Shell';
 import { CorpusSearch } from '../components/CorpusSearch';
@@ -9,17 +10,17 @@ import { DocumentPane } from '../components/DocumentPane';
 import { IssueList } from '../components/IssueList';
 import { EvidencePane } from '../components/EvidencePane';
 import s from '../styles/desk.module.css';
+import type { Issue } from '../types';
 
-/** 引擎实际生效规则数（campus-kb 19 条）；RULES 只收录被命中过的规则定义 */
-const RULES_IN_EFFECT = 19;
-const ENGINE_MS = 400;
-
+const NO_ISSUES: readonly Issue[] = [];
 const RULE_MAP = new Map(RULES.map((r) => [r.id, r]));
 
 /** B 类工作台页面：无渐变、无光斑，动效只有一次 420ms 分层落位 */
 export default function Desk() {
-  const issueMap = useMemo(() => buildIssueMap(ISSUES), []);
-  const { state, counts, visible, selected, dispatch, select, step } = useReview(ISSUES);
+  const { phase, retry } = useReviewRequest();
+  const issues = phase.kind === 'ready' ? phase.result.issues : NO_ISSUES;
+  const issueMap = useMemo(() => buildIssueMap(issues), [issues]);
+  const { state, counts, visible, selected, dispatch, select, step } = useReview(issues);
 
   const wide = useMediaQuery('(min-width: 1181px)');
   const compact = useMediaQuery('(max-width: 900px)');
@@ -79,6 +80,7 @@ export default function Desk() {
   const onRerun = () => {
     dispatch({ type: 'reset' });
     setExportLabel('导出批注');
+    retry();
   };
 
   const rule = selected ? (RULE_MAP.get(selected.ruleId) ?? null) : null;
@@ -125,6 +127,20 @@ export default function Desk() {
         exportLabel={exportLabel}
       />
 
+      {phase.kind === 'loading' ? (
+        <div className={s.notice} role="status">
+          正在调用校验接口…
+        </div>
+      ) : null}
+      {phase.kind === 'error' ? (
+        <div className={`${s.notice} ${s.noticeErr}`} role="alert">
+          校验接口不可用：{phase.message}
+          <button type="button" onClick={retry}>
+            重试
+          </button>
+        </div>
+      ) : null}
+
       <div className={wsClass}>
         <Rail onOpenLibrary={() => setLibraryOpen((v) => !v)} libraryOpen={libraryOpen} />
         {libraryOpen ? <CorpusSearch onClose={() => setLibraryOpen(false)} /> : null}
@@ -146,7 +162,11 @@ export default function Desk() {
       {compact ? (
         <MobileTabs tab={tab} onChange={setTab} counts={counts} />
       ) : (
-        <StatusBar counts={counts} rulesInEffect={RULES_IN_EFFECT} durationMs={ENGINE_MS} />
+        <StatusBar
+          counts={counts}
+          rulesInEffect={phase.kind === 'ready' ? phase.result.ruleCount : 0}
+          durationMs={phase.kind === 'ready' ? phase.result.durationMs : 0}
+        />
       )}
 
       {/* 中等宽度：依据收成底部抽屉，选中问题即展开 */}
