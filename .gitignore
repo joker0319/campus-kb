@@ -17,5 +17,8 @@ vite.config.ts.timestamp-*.mjs
 iasa4tz8
 zh7_c27t
 
+# 真实档案语料（含真实人名与内部信息，仅存本地）
+campus-kb/corpus/
+
 # 个人工作记录（保留设计语言 skill，不上传日志）
 .workbuddy/memory/
