@@ -1,10 +1,15 @@
 import { useEffect, useState } from 'react';
 import Landing from './pages/Landing';
 import Desk from './pages/Desk';
+import Assistant from './pages/Assistant';
 
-type Route = 'home' | 'desk';
+type Route = 'home' | 'desk' | 'assistant';
 
-const parse = (): Route => (window.location.hash.startsWith('#/desk') ? 'desk' : 'home');
+const parse = (): Route => {
+  if (window.location.hash.startsWith('#/desk')) return 'desk';
+  if (window.location.hash.startsWith('#/assistant')) return 'assistant';
+  return 'home';
+};
 
 function useHashRoute(): Route {
   const [route, setRoute] = useState<Route>(parse);
@@ -24,5 +29,7 @@ export default function App() {
     window.scrollTo(0, 0);
   }, [route]);
 
-  return route === 'desk' ? <Desk /> : <Landing />;
+  if (route === 'desk') return <Desk />;
+  if (route === 'assistant') return <Assistant />;
+  return <Landing />;
 }

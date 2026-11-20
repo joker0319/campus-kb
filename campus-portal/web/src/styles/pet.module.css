@@ -1,40 +1,61 @@
-/* 墨点小助手 —— 三层 <g> 分别承载呼吸 / 弹跳 / 眨眼，
-   同一元素叠多个 transform 动画时后者会覆盖前者，必须分层。 */
+/* 墨点入口 —— 知识库个人助手。精灵保留呼吸 / 眨眼 / 瞳孔跟随。 */
 
-.row {
-  display: flex;
+.entry {
+  display: inline-flex;
   align-items: center;
-  gap: calc(var(--pet, 56px) * 0.22);
+  gap: calc(var(--pet, 56px) * 0.3);
   min-height: var(--pet, 56px);
+  padding: 6px 4px;
+  color: inherit;
+  text-decoration: none;
+  border-radius: 16px;
+  transition: transform 0.22s var(--ease);
+}
+.entry:hover {
+  transform: translateY(-2px);
+}
+.entry:focus-visible {
+  outline: 2px solid var(--brand);
+  outline-offset: 4px;
 }
 
 .pet {
   flex: none;
   width: var(--pet, 56px);
   height: var(--pet, 56px);
-  padding: 0;
   display: grid;
   place-items: center;
-  border-radius: 50%;
-  background: transparent;
-  transition: transform 0.22s var(--ease);
 }
-.pet:hover {
-  transform: translateY(-2px) scale(1.05);
-}
-.pet:active {
-  transform: scale(0.96);
-}
-.pet:focus-visible {
-  outline: 2px solid var(--brand);
-  outline-offset: 4px;
-}
-
 .svg {
   width: 100%;
   height: 100%;
   display: block;
   overflow: visible;
+}
+
+.copy {
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+  align-items: flex-start;
+}
+.title {
+  font-size: max(15px, calc(var(--pet, 56px) * 0.3));
+  font-weight: 700;
+  letter-spacing: 0.01em;
+  color: var(--ink);
+}
+.bubble {
+  margin: 0;
+  padding: 7px 13px;
+  font-size: max(12.5px, calc(var(--pet, 56px) * 0.18));
+  line-height: 1.55;
+  color: var(--ink-2);
+  background: var(--surface);
+  border-radius: 10px;
+  box-shadow:
+    0 0 0 1px var(--line),
+    0 8px 20px -14px rgba(25, 25, 23, 0.4);
 }
 
 /* 呼吸：极小的幅度，幅度大就成了蹦跳玩具 */
@@ -50,52 +71,6 @@
   }
   50% {
     transform: scale(1.022, 0.975);
-  }
-}
-
-.pop {
-  transform-box: fill-box;
-  transform-origin: 50% 100%;
-}
-/* 两个同内容的关键帧交替，靠 animation-name 变化让连点也能重播 */
-.pet[data-pop='1'] .pop {
-  animation: popA 0.54s var(--ease);
-}
-.pet[data-pop='2'] .pop {
-  animation: popB 0.54s var(--ease);
-}
-@keyframes popA {
-  0% {
-    transform: none;
-  }
-  16% {
-    transform: scale(1.13, 0.85) translateY(2px);
-  }
-  44% {
-    transform: scale(0.93, 1.12) translateY(-6px);
-  }
-  70% {
-    transform: scale(1.03, 0.97) translateY(0);
-  }
-  100% {
-    transform: none;
-  }
-}
-@keyframes popB {
-  0% {
-    transform: none;
-  }
-  16% {
-    transform: scale(1.13, 0.85) translateY(2px);
-  }
-  44% {
-    transform: scale(0.93, 1.12) translateY(-6px);
-  }
-  70% {
-    transform: scale(1.03, 0.97) translateY(0);
-  }
-  100% {
-    transform: none;
   }
 }
 
@@ -147,58 +122,16 @@
   opacity: 0.9;
 }
 
-/* 气泡 */
-.bubble {
-  position: relative;
-  margin: 0;
-  padding: calc(var(--pet, 56px) * 0.16) calc(var(--pet, 56px) * 0.25);
-  max-width: 370px;
-  font-size: max(12.5px, calc(var(--pet, 56px) * 0.19));
-  line-height: 1.6;
-  color: var(--ink-2);
-  background: var(--surface);
-  border-radius: 12px;
-  box-shadow:
-    0 0 0 1px var(--line),
-    0 8px 20px -14px rgba(25, 25, 23, 0.4);
-  animation: bubbleIn 0.32s var(--ease);
-}
-.bubble::before {
-  content: '';
-  position: absolute;
-  left: -3.5px;
-  top: 50%;
-  width: 7px;
-  height: 7px;
-  transform: translateY(-50%) rotate(45deg);
-  background: var(--surface);
-  box-shadow: -1px 1px 0 var(--line);
-}
-@keyframes bubbleIn {
-  from {
-    opacity: 0;
-    transform: translateX(-5px);
-  }
-  to {
-    opacity: 1;
-    transform: none;
-  }
-}
-
 @media (prefers-reduced-motion: reduce) {
   .breathe,
-  .eyes,
-  .bubble,
-  .pet[data-pop='1'] .pop,
-  .pet[data-pop='2'] .pop {
+  .eyes {
     animation: none;
   }
   .pupils {
     transform: none;
   }
-  .pet,
-  .pet:hover,
-  .pet:active {
+  .entry,
+  .entry:hover {
     transform: none;
   }
 }
