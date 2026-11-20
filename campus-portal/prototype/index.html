@@ -12,7 +12,7 @@ if(!matchMedia("(prefers-reduced-motion: reduce)").matches){
 </script>
 <!--
   设计约束（与 v1 的区别，刻意为之）
-  1. 字体全部走系统栈：内网无法访问 Google Fonts，任何外链字体都会 fallback 并导致度量失配。
+  1. 字体全部走系统栈：不引外部字体，任何外链字体都会 fallback 并导致度量失配。
   2. 正文不随视口缩放：工作台不是落地页，13 寸和 27 寸上正文都必须是 15px。
      度量系统用固定 px 阶 + 4px 网格，而不是 vw 换算的 rem。
   3. 无渐变、无光斑、无逐字入场：动效只有一次 420ms 的分层落位。

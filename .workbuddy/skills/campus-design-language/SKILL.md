@@ -1,6 +1,6 @@
 ---
 name: campus-design-language
-description: 校园资源库/校稿台项目（campus-portal）的前端设计语言规范。提炼自 motionsites、aceternity、showreel、uiverse、reactbits、animejs 六个参考站，并加入本项目的内网约束与"去 AI 味"原则。当为本项目开发任何新页面、新组件、新动效，或用户要求视觉升级/设计评审时必须加载本 skill；尤其适用于首页/落地页、宣传页、以及工作台界面的视觉决策。
+description: 校园资源库/校稿台项目（campus-portal）的前端设计语言规范。提炼自 motionsites、aceternity、showreel、uiverse、reactbits、animejs 六个参考站，并加入本项目的工程约束与"去 AI 味"原则。当为本项目开发任何新页面、新组件、新动效，或用户要求视觉升级/设计评审时必须加载本 skill；尤其适用于首页/落地页、宣传页、以及工作台界面的视觉决策。
 agent_created: true
 ---
 
@@ -28,7 +28,7 @@ campus-portal 项目的设计语言规范。核心立场：**设计语言是分�
 
 ## 硬性约束（违反即返工）
 
-### 内网环境
+### 零外部资源
 - **禁止外部资源**：无 Google Fonts、无 CDN 图片、无 Lottie。字体一律系统栈
 - 中文系统栈基准：`-apple-system, "PingFang SC", "Microsoft YaHei", sans-serif`；衬线：`"Songti SC", "SimSun", serif`
 - 外链字体一旦 fallback，所有基于字宽的度量（入场编排、clip-path 遮罩）全部失配

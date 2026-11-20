@@ -2,7 +2,7 @@
 
 > 决策时间：2026-11-18
 > 状态：已采纳（修订 ADR-001 中的规则引擎迁移决定）
-> 约束：内网部署 / 2-3 人小组维护 / 解析必须依赖 Python 生态
+> 约束：2-3 人小组维护 / 解析必须依赖 Python 生态
 
 ## 一、决策
 
@@ -40,5 +40,5 @@
 
 1. ✅ `POST /api/review`、`GET /api/rules`、`GET /api/health`（2026-11-18）
 2. 前端 `data/content.ts` 换接真实接口（OpenAPI 生成类型）
-3. `POST /api/parse`：docx/PDF 解析（PyMuPDF 先行，OCR 视内网 GPU 条件）
+3. `POST /api/parse`：docx/PDF 解析（PyMuPDF 先行，OCR 视硬件条件）
 4. 导出带批注 docx
