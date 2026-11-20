@@ -22,3 +22,6 @@ campus-kb/corpus/
 
 # 个人工作记录（保留设计语言 skill，不上传日志）
 .workbuddy/memory/
+
+# pytest basetemp（沙箱下用项目内目录）
+.pytest-tmp/

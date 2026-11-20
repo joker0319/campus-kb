@@ -54,7 +54,15 @@ const RAIL = [
   { key: 'templates', label: '模板', icon: 'template' },
 ] as const;
 
-export function Rail({ active = 'review' }: { active?: string }) {
+export function Rail({
+  active = 'review',
+  onOpenLibrary,
+  libraryOpen = false,
+}: {
+  active?: string;
+  onOpenLibrary?: () => void;
+  libraryOpen?: boolean;
+}) {
   return (
     <nav className={`${s.rail} js-anim`} style={delay('.04s')} aria-label="主导航">
       {RAIL.map((it) => (
@@ -64,6 +72,8 @@ export function Rail({ active = 'review' }: { active?: string }) {
           className={`${s.railItem} ${active === it.key ? s.railOn : ''}`}
           title={it.label}
           aria-current={active === it.key ? 'page' : undefined}
+          onClick={it.key === 'library' && onOpenLibrary ? onOpenLibrary : undefined}
+          aria-expanded={it.key === 'library' ? libraryOpen : undefined}
         >
           <RailIcon name={it.icon} />
           <span>{it.label}</span>

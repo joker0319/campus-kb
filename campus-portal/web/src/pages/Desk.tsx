@@ -4,6 +4,7 @@ import { buildIssueMap } from '../lib/review';
 import { useReview } from '../hooks/useReview';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { AppBar, MobileTabs, Rail, StatusBar } from '../components/Shell';
+import { CorpusSearch } from '../components/CorpusSearch';
 import { DocumentPane } from '../components/DocumentPane';
 import { IssueList } from '../components/IssueList';
 import { EvidencePane } from '../components/EvidencePane';
@@ -24,6 +25,7 @@ export default function Desk() {
   const compact = useMediaQuery('(max-width: 900px)');
 
   const [tab, setTab] = useState<'doc' | 'issues' | 'evidence'>('doc');
+  const [libraryOpen, setLibraryOpen] = useState(false);
   const [exportLabel, setExportLabel] = useState('导出批注');
   const exportTimer = useRef<number | null>(null);
 
@@ -124,7 +126,8 @@ export default function Desk() {
       />
 
       <div className={wsClass}>
-        <Rail />
+        <Rail onOpenLibrary={() => setLibraryOpen((v) => !v)} libraryOpen={libraryOpen} />
+        {libraryOpen ? <CorpusSearch onClose={() => setLibraryOpen(false)} /> : null}
         {compact ? (
           <>
             {tab === 'doc' && docPane}

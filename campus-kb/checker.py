@@ -158,6 +158,11 @@ def h_halfwidth_punct_in_cn(rule, text):
             continue
         hits = []
         for m in re.finditer(r"[,;:?!]", line):
+            # 数字之间的冒号/逗号是时间（22:00）、比值（1:1）、千分位（1,000），豁免
+            before = line[m.start() - 1] if m.start() > 0 else ""
+            after = line[m.end()] if m.end() < len(line) else ""
+            if before.isdigit() and after.isdigit():
+                continue
             lo, hi = max(0, m.start() - 3), min(len(line), m.end() + 3)
             if re.search("[%s]" % CN, line[lo:hi]):
                 hits.append(m.group(0))
@@ -278,17 +283,24 @@ def load_rules():
     rules, skipped = [], []
     for p in sorted(RULES_DIR.glob("*.json")):
         data = json.loads(p.read_text(encoding="utf-8"))
+        # 文件级 context 标记适用场景：submission.json 只在投稿校验时生效
+        ctx = data.get("context")
         for r in data.get("rules", []):
             if r.get("type") not in HANDLERS:
                 skipped.append(r["id"])
                 continue
+            if ctx:
+                r["context"] = ctx
             rules.append(r)
     return rules, skipped
 
 
-def run(text, rules):
+def run(text, rules, mode="submission"):
+    """mode: submission=投稿校验（全量规则）；archive=档案检索（跳过投稿格式规则）"""
     findings = []
     for r in rules:
+        if r.get("context") and mode != "submission":
+            continue
         findings.extend(HANDLERS[r["type"]](r, text))
     findings.sort(key=lambda f: (f["line"], SEV_RANK[f["severity"]], f["rule_id"]))
     return findings
@@ -365,6 +377,8 @@ def main():
     ap.add_argument("file")
     ap.add_argument("--md")
     ap.add_argument("--json", action="store_true")
+    ap.add_argument("--mode", choices=["submission", "archive"], default="submission",
+                    help="submission=投稿校验（默认）；archive=档案检索（跳过投稿格式规则）")
     args = ap.parse_args()
 
     path = Path(args.file)
@@ -372,18 +386,20 @@ def main():
     rules, skipped = load_rules()
     if skipped:
         print("跳过未实现规则：%s" % ", ".join(skipped), file=sys.stderr)
-    findings = run(text, rules)
+    findings = run(text, rules, mode=args.mode)
+    applied = len(rules) - sum(1 for r in rules if r.get("context"))
 
     if args.json:
         print(json.dumps({"file": str(path), "findings": findings,
-                          "rule_count": len(rules)}, ensure_ascii=False, indent=2))
+                          "rule_count": applied, "mode": args.mode},
+                         ensure_ascii=False, indent=2))
     else:
-        print_console(path, findings, len(rules))
+        print_console(path, findings, applied)
 
     if args.md:
         out = Path(args.md)
         out.parent.mkdir(parents=True, exist_ok=True)
-        out.write_text(to_markdown(path, findings, len(rules)), encoding="utf-8")
+        out.write_text(to_markdown(path, findings, applied), encoding="utf-8")
         print("报告已写入 %s" % out)
 
     return 1 if any(f["severity"] == "error" for f in findings) else 0

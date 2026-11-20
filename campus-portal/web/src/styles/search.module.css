@@ -1,0 +1,171 @@
+/* 档案检索抽屉：贴左栏右侧，B 类功能面板——纯功能样式，无装饰 */
+
+.wrap {
+  position: fixed;
+  top: 52px;
+  left: 64px;
+  bottom: 32px;
+  width: min(400px, 42vw);
+  z-index: 40;
+  display: flex;
+  flex-direction: column;
+  background: var(--surface);
+  box-shadow:
+    1px 0 0 var(--line),
+    12px 0 32px -20px rgba(25, 25, 23, 0.35);
+  animation: slideIn 0.24s var(--ease);
+}
+
+@keyframes slideIn {
+  from {
+    opacity: 0;
+    transform: translateX(-14px);
+  }
+  to {
+    opacity: 1;
+    transform: none;
+  }
+}
+
+.head {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 13px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.head b {
+  font-size: 13.5px;
+  color: var(--ink);
+}
+
+.hint {
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+
+.close {
+  margin-left: auto;
+  font-size: 13px;
+  color: var(--ink-3);
+  padding: 3px 8px;
+  border-radius: 6px;
+}
+
+.close:hover {
+  color: var(--ink);
+  background: var(--paper);
+}
+
+.form {
+  display: flex;
+  gap: 8px;
+  padding: 12px 16px;
+  border-bottom: 1px solid var(--line);
+}
+
+.input {
+  flex: 1;
+  font-size: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--line);
+  border-radius: 8px;
+  background: var(--paper);
+  color: var(--ink);
+}
+
+.input:focus {
+  outline: none;
+  border-color: var(--brand);
+}
+
+.go {
+  font-size: 12.5px;
+  padding: 8px 14px;
+  border-radius: 8px;
+  background: var(--ink);
+  color: var(--surface);
+}
+
+.go:disabled {
+  opacity: 0.55;
+}
+
+.body {
+  flex: 1;
+  overflow: auto;
+  padding: 12px 16px 20px;
+}
+
+.muted,
+.err {
+  font-size: 12.5px;
+  color: var(--ink-3);
+  padding-top: 10px;
+}
+
+.err {
+  color: var(--err, #b33);
+}
+
+.meta {
+  font-size: 11.5px;
+  color: var(--ink-3);
+  margin: 2px 0 10px;
+}
+
+.list {
+  list-style: none;
+  margin: 0;
+  padding: 0;
+  display: grid;
+  gap: 12px;
+}
+
+.item {
+  border: 1px solid var(--line);
+  border-radius: 10px;
+  padding: 9px 12px;
+  background: var(--paper);
+}
+
+.itemHead {
+  display: flex;
+  align-items: baseline;
+  gap: 8px;
+  font-size: 11.5px;
+}
+
+.file {
+  color: var(--brand);
+  font-weight: 600;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.lineNo {
+  color: var(--ink-3);
+  flex: none;
+}
+
+.hits {
+  margin-left: auto;
+  color: var(--ink-3);
+  flex: none;
+}
+
+.excerpt {
+  margin: 5px 0 0;
+  font-size: 12.5px;
+  line-height: 1.65;
+  color: var(--ink-2);
+  word-break: break-all;
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wrap {
+    animation: none;
+  }
+}

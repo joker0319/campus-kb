@@ -30,6 +30,11 @@ class RulesResponse(BaseModel):
 
 class ReviewRequest(BaseModel):
     content: str = Field(min_length=1, max_length=200_000, description="稿件正文（纯文本）")
+    mode: str = Field(
+        default="submission",
+        pattern="^(submission|archive)$",
+        description="submission=投稿校验（默认，全量规则）；archive=档案检索（跳过投稿格式规则）",
+    )
 
 
 class Finding(BaseModel):

@@ -34,9 +34,13 @@ uv run pytest                                             # 10 个用例，含 b
 | --- | --- |
 | `GET /api/health` | 存活检查 |
 | `GET /api/rules` | 19 条规则 + 出处（total / skipped / rules[]） |
-| `POST /api/review` | `{ content }` → `{ findings[], counts, ruleCount }`；finding.key 为 `ruleId@line`，同规则同行多次命中追加 `-2/-3` |
+| `POST /api/review` | `{ content, mode? }` → `{ findings[], counts, ruleCount }`；`mode=submission`（默认）全量规则，`mode=archive` 跳过投稿格式规则；finding.key 为 `ruleId@line`，同规则同行多次命中追加 `-2/-3` |
+| `GET /api/search?q=` | 语料库全文检索：关键词（空格分隔 AND）→ `{ total, scanned, results[{file,line,excerpt,hits}] }` |
 
 severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为 `warn、info → warning`，`counts` 保留原始分档。决策见 `campus-portal/docs/adr-002-python-backend.md`。
+
+真实语料校准（corpus/text/ 26 份）：PUNCT-001 对时间（22:00）、比值（1:1）、千分位（1,000）
+数字间半角标点豁免；archive 模式扫全部档案时只剩内容规则命中（38 处，全是真问题）。
 
 ## 目录
 

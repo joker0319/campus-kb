@@ -13,13 +13,14 @@ from collections import Counter
 from pathlib import Path
 from typing import Annotated
 
-from fastapi import Depends, FastAPI
+from fastapi import Depends, FastAPI, Query
 from fastapi.middleware.cors import CORSMiddleware
 
 # checker.py 与 api/ 同级，保证 uvicorn 任意 cwd 启动都能导入
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import checker  # noqa: E402  # sys.path 调整必须在前
+from . import search as corpus_search  # noqa: E402
 
 from .schemas import (  # noqa: E402
     Counts,
@@ -93,7 +94,8 @@ def list_rules(engine: EngineDep) -> RulesResponse:
 @app.post("/api/review")
 def review(req: ReviewRequest, engine: EngineDep) -> ReviewResponse:
     rules, _skipped = engine
-    findings = checker.run(req.content, rules)
+    findings = checker.run(req.content, rules, mode=req.mode)
+    applied = sum(1 for r in rules if not r.get("context") or req.mode == "submission")
 
     # 稳定 key：ruleId@line；同规则同线多次命中（如一段里错多个词）追加 -2/-3
     seen: Counter = Counter()
@@ -121,5 +123,14 @@ def review(req: ReviewRequest, engine: EngineDep) -> ReviewResponse:
             warn=sev["warn"],
             info=sev["info"],
         ),
-        ruleCount=len(rules),
+        ruleCount=applied,
     )
+
+
+@app.get("/api/search")
+def search(
+    q: Annotated[str, Query(min_length=1, max_length=100, description="关键词，空格分隔为 AND")],
+    limit: Annotated[int, Query(ge=1, le=50)] = 20,
+) -> dict:
+    """语料库全文检索：关键词 → 文件名 + 行号 + 摘录。"""
+    return corpus_search.search(q, limit=limit)
