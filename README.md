@@ -22,8 +22,8 @@
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
-| 薄后端（FastAPI） | ✅ 首版可用 | `/api/review`、`/api/rules`、`/api/health`，pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
-| 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；命中来自真实 `POST /api/review`，档案检索接 `/api/search` |
+| 薄后端（FastAPI） | ✅ 首版可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`，27 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件送审，按后端精确命中动态标红；档案检索接 `/api/search` |
 | 首页 | ✅ 完成 | 3D 稿件卡轮播（3 个真实命中案例）、墨点小助手、实测数据条 |
 | 数据库 / 投稿流程 | ⏳ 未开始 | 选型见 [ADR-001](campus-portal/docs/tech-selection.md) |
 | docx 解析 / 导出批注 | ⏳ 未开始 | 目前只支持粘贴纯文本 |
@@ -42,7 +42,7 @@
 .
 ├── campus-kb/                     # 规则引擎 + FastAPI 薄后端
 │   ├── checker.py                 # 引擎：加规则只改 JSON，不改代码
-│   ├── api/                       # FastAPI 封装：/api/review、/api/rules、/api/health
+│   ├── api/                       # FastAPI 封装：/api/review、/api/rules、/api/health、/api/search
 │   ├── tests/                     # pytest：契约 + bad 17 / good 0 基线断言
 │   ├── rules/                     # 8 个规则文件
 │   ├── samples/                   # 正反样例
@@ -52,8 +52,8 @@
 │   ├── prototype/                 # 早期静态原型
 │   └── web/                       # React 19 + TS + Vite 前端
 │       ├── src/pages/             # Landing（首页）、Desk（校稿台）
-│       ├── src/components/        # 三栏校稿台、CaseStage、PetMascot
-│       ├── src/lib/               # review / segments / countUp 纯函数
+│       ├── src/components/        # 三栏校稿台、CaseStage、PetMascot、SubmitDialog
+│       ├── src/lib/               # review / segments / buildDraft / api / countUp 纯函数
 │       └── src/styles/            # tokens.css 单一来源 + CSS Modules
 └── .workbuddy/skills/campus-design-language/   # 设计语言规范
 ```
@@ -67,7 +67,7 @@ cd campus-kb
 python3 checker.py samples/bad-draft.md                 # 终端输出（退出码：有 error 返回 1）
 python3 checker.py samples/bad-draft.md --json          # 供其他系统调用
 uv sync                                                 # 安装 API 依赖
-uv run pytest                                           # 10 个用例，含基线断言
+uv run pytest                                           # 27 个用例，含基线断言
 uv run uvicorn api.main:app --reload --port 8000        # 启动 API
 ```
 
@@ -93,6 +93,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 **校稿台 `#/desk`**
 
 - 三栏：正文（命中标红、行号对齐）→ 问题清单（错误 / 警告 / 已忽略，j/k 导航）→ 依据（规则原文 + 出处）；
+- 顶栏「粘贴稿件」可送审任意正文；后端 finding 返回精确命中 `hit`，前端 `buildDraft` 据此切分标红，不再依赖内置样例；
 - 问题条目 key 为 `${ruleId}@${line}`，不用数组下标——筛选后下标会漂移；
 - 同一段命中多条规则时，只要有一条 `error` 就按错误样式标记（警告淹没在错误里反而是误导）。
 
@@ -106,7 +107,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 39 个（Vitest + Testing Library），后端 10 个（pytest）；
+- 测试：前端 59 个（Vitest + Testing Library），后端 27 个（pytest）；
 - 运行时依赖只有 React 本体 + FastAPI。
 
 ## 7. 开发日志
@@ -117,6 +118,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - **11-13 React 落地**：首页与校稿台从零实现，测试从 0 到 39。
 - **11-18 后端**：后端语言定为 Python（ADR-002），FastAPI 封装引擎并锁基线。
 - **11-20 梳理**：清理目录与文档。
+- **11-21 任意稿件**：后端 finding 增加精确 `hit`，前端按 `hit` 动态标红；校稿台支持粘贴任意正文送审。
 
 踩过的坑（均已写进代码注释或测试）：
 
@@ -133,15 +135,14 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - 只做**文本规则**：不判断事实真伪，不校验图片（仍需人工）；
 - 中文分词靠正则，长句中的职务简称（如「段校长」）可能漏判，靠人名 + 窗口匹配兜底；
-- 校稿台演示的固定送审稿是 `bad-draft.md`，其他稿件走接口需要再接入编辑/上传入口；
+- 粘贴稿件只接受纯文本，docx 上传解析尚未接入；
 - `layout.json` 只是排版参数，尚未接入文档生成。
 
 ## 9. 下一步
 
-1. 前端接 `/api/review`（OpenAPI 生成前端类型）；
-2. docx 上传解析、导出带批注 docx；
-3. 投稿流程与版本管理（模型要点见 ADR-001 第四节）；
-4. 带出处的规范问答、初稿生成。
+1. docx 上传解析、导出带批注 docx；
+2. 投稿流程与版本管理（模型要点见 ADR-001 第四节）；
+3. 带出处的规范问答、初稿生成。
 
 ## 10. 说明
 

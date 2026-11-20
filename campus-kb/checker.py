@@ -27,7 +27,7 @@ C = {"error": "\033[31m", "warn": "\033[33m", "info": "\033[36m",
      "dim": "\033[2m", "bold": "\033[1m", "off": "\033[0m"}
 
 
-def mk(rule, line_no, excerpt, message, suggestion=None):
+def mk(rule, line_no, excerpt, message, suggestion=None, hit=None):
     return {
         "rule_id": rule["id"],
         "category": rule["category"],
@@ -36,6 +36,7 @@ def mk(rule, line_no, excerpt, message, suggestion=None):
         "message": message,
         "excerpt": excerpt,
         "suggestion": suggestion if suggestion is not None else rule.get("suggestion", ""),
+        "hit": hit or "",
     }
 
 
@@ -71,7 +72,7 @@ def h_first_mention_fullname(rule, text):
     if kind == "full":
         return []
     return [mk(rule, line_of(text, st), frag(text, st, en),
-               "稿件首次出现校名即使用简称「%s」" % w)]
+               "稿件首次出现校名即使用简称「%s」" % w, hit=w)]
 
 
 def h_fullwidth_paren(rule, text):
@@ -82,7 +83,7 @@ def h_fullwidth_paren(rule, text):
         if not re.search("[%s]" % CN, m.group(1)):
             continue
         out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()),
-                      "中文内容使用了半角括号「%s」" % m.group(0)))
+                      "中文内容使用了半角括号「%s」" % m.group(0), hit=m.group(0)))
     return out
 
 
@@ -91,7 +92,7 @@ def h_halfwidth_paren_space(rule, text):
     anchor = rule["params"]["anchor"]
     for m in re.finditer(re.escape(anchor) + r"\(", text):
         out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()),
-                      "英文校名括号前缺一个半角空格"))
+                      "英文校名括号前缺一个半角空格", hit=anchor + "("))
     return out
 
 
@@ -99,7 +100,7 @@ def h_forbid_pattern(rule, text):
     out = []
     msg = rule["params"].get("message") or rule["desc"]
     for m in re.finditer(rule["params"]["pattern"], text):
-        out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()), msg))
+        out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()), msg, hit=m.group(0)))
     return out
 
 
@@ -115,7 +116,7 @@ def h_dictionary(rule, text):
             msg = "「%s」应写作「%s」" % (m.group(0), item["right"])
             if note:
                 msg += "（%s）" % note
-            out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()), msg))
+            out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()), msg, hit=m.group(0)))
     return out
 
 
@@ -129,7 +130,7 @@ def h_must_near(rule, text):
                 continue
             out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()),
                           "「%s」附近未见规范职务表述（应含 %s）"
-                          % (item["name"], " / ".join(item["must_near"]))))
+                          % (item["name"], " / ".join(item["must_near"])), hit=item["name"]))
     return out
 
 
@@ -146,7 +147,7 @@ def h_require_context(rule, text):
             if any(k in ctx for k in item["require"]):
                 continue
             out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()),
-                          "「%s」须明确为 %s" % (item["term"], " / ".join(item["require"]))))
+                          "「%s」须明确为 %s" % (item["term"], " / ".join(item["require"])), hit=m.group(0)))
     return out
 
 
@@ -172,7 +173,7 @@ def h_halfwidth_punct_in_cn(rule, text):
         out.append(mk(rule, i, line.strip()[:70],
                       "中文语境使用了半角标点 %s（共 %d 处）"
                       % ("、".join("「%s」" % c for c in uniq), len(hits)),
-                      "改用全角 " + " ".join("「%s」" % trans[c] for c in uniq)))
+                      "改用全角 " + " ".join("「%s」" % trans[c] for c in uniq), hit=uniq[0]))
     return out
 
 
@@ -183,7 +184,7 @@ def h_no_space_number_unit(rule, text):
         compact = re.sub(r"\s+", "", m.group(0))
         out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()),
                       "数字与单位之间不应有空格「%s」" % m.group(0),
-                      "改为「%s」" % compact))
+                      "改为「%s」" % compact, hit=m.group(0)))
     return out
 
 
@@ -193,7 +194,7 @@ def h_date_format(rule, text):
         y, mo, d = m.group(1), int(m.group(2)), int(m.group(3))
         out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()),
                       "日期「%s」不符合中文格式" % m.group(0),
-                      "%s年%d月%d日" % (y, mo, d)))
+                      "%s年%d月%d日" % (y, mo, d), hit=m.group(0)))
     return out
 
 
@@ -208,7 +209,7 @@ def h_ordinal_suffix(rule, text):
         if correct != s:
             out.append(mk(rule, line_of(text, m.start()), frag(text, m.start(), m.end()),
                           "英文序数词错误「%s」" % m.group(0),
-                          "应为 %d%s" % (n, correct)))
+                          "应为 %d%s" % (n, correct), hit=m.group(0)))
     return out
 
 
@@ -219,16 +220,17 @@ def h_title_format(rule, text):
             continue
         if re.match(r"^【[^】]+】", s):
             return []
-        return [mk(rule, i, s[:70], "标题未按「【投稿部门】投稿内容」格式填写")]
+        return [mk(rule, i, s[:70], "标题未按「【投稿部门】投稿内容」格式填写", hit=s)]
     return []
 
 
 def h_bilingual_flag(rule, text):
     cn = len(re.findall("[%s]" % CN, text))
     en = len(re.findall(r"[A-Za-z]", text))
+    title = text.strip().split("\n")[0]
     if cn > 50 and en < cn * 0.1 and "[Chinese]" not in text:
-        return [mk(rule, 1, text.strip().split("\n")[0][:60],
-                   "仅提交中文内容，但英文标题未标注 [Chinese]")]
+        return [mk(rule, 1, title[:60],
+                   "仅提交中文内容，但英文标题未标注 [Chinese]", hit=title)]
     return []
 
 
@@ -236,8 +238,9 @@ def h_category_required(rule, text):
     cats = rule["params"]["categories"]
     if any(c in text for c in cats):
         return []
-    return [mk(rule, 1, text.strip().split("\n")[0][:60],
-               "未声明内容分类，投稿须勾选以下之一：%s" % " / ".join(cats))]
+    title = text.strip().split("\n")[0]
+    return [mk(rule, 1, title[:60],
+               "未声明内容分类，投稿须勾选以下之一：%s" % " / ".join(cats), hit=title)]
 
 
 def h_rank_conflict(rule, text):
@@ -256,7 +259,7 @@ def h_rank_conflict(rule, text):
     if len(vals) > 1:
         pos = hits[0][0]
         return [mk(rule, line_of(text, pos), frag(text, pos, pos + 12),
-                   "文内 QS %s 排名出现多个不同数值 %s" % (year, vals))]
+                   "文内 QS %s 排名出现多个不同数值 %s" % (year, vals), hit=str(hits[0][1]))]
     return []
 
 

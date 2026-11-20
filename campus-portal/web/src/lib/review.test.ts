@@ -16,6 +16,7 @@ const mk = (key: string, severity: 'error' | 'warning'): Issue => ({
   line: 1,
   message: key,
   fix: '',
+  hit: '',
 });
 
 const A = mk('A', 'error');

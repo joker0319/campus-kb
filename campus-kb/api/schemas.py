@@ -45,6 +45,7 @@ class Finding(BaseModel):
     message: str
     excerpt: str
     suggestion: str = ""
+    hit: str = Field(default="", description="精确命中文本（原文子串），供前端给任意稿件标红；行级规则为整行")
 
 
 class Counts(BaseModel):

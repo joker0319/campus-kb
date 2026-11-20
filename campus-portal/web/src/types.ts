@@ -37,6 +37,8 @@ export interface Issue {
   readonly line: number;
   readonly message: string;
   readonly fix: string;
+  /** 后端给出的精确命中子串，供任意稿件动态标红；行级规则为整行 */
+  readonly hit: string;
 }
 
 /** 正文片段；带 issueKeys 的片段渲染为可点击的校样标记 */

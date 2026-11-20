@@ -9,6 +9,7 @@ interface ApiFinding {
   message: string;
   excerpt: string;
   suggestion: string;
+  hit: string;
 }
 
 interface ApiReviewResponse {
@@ -38,6 +39,7 @@ export function toIssue(f: ApiFinding): Issue {
     line: f.line,
     message: f.message,
     fix: f.suggestion || '以规范原文为准',
+    hit: f.hit || '',
   };
 }
 

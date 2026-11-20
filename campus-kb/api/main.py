@@ -112,6 +112,7 @@ def review(req: ReviewRequest, engine: EngineDep) -> ReviewResponse:
             message=f["message"],
             excerpt=f["excerpt"],
             suggestion=f.get("suggestion", ""),
+            hit=f.get("hit", ""),
         ))
 
     sev = Counter(f["severity"] for f in findings)

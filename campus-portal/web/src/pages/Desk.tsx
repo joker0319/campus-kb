@@ -1,11 +1,12 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DRAFT, RULES } from '../data/content';
+import { DRAFT_TEXT, RULES } from '../data/content';
 import { buildIssueMap } from '../lib/review';
 import { useReview } from '../hooks/useReview';
 import { useReviewRequest } from '../hooks/useReviewRequest';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { AppBar, MobileTabs, Rail, StatusBar } from '../components/Shell';
 import { CorpusSearch } from '../components/CorpusSearch';
+import { SubmitDialog } from '../components/SubmitDialog';
 import { DocumentPane } from '../components/DocumentPane';
 import { IssueList } from '../components/IssueList';
 import { EvidencePane } from '../components/EvidencePane';
@@ -17,7 +18,7 @@ const RULE_MAP = new Map(RULES.map((r) => [r.id, r]));
 
 /** B 类工作台页面：无渐变、无光斑，动效只有一次 420ms 分层落位 */
 export default function Desk() {
-  const { phase, retry } = useReviewRequest();
+  const { phase, content, draft, submit, retry } = useReviewRequest();
   const issues = phase.kind === 'ready' ? phase.result.issues : NO_ISSUES;
   const issueMap = useMemo(() => buildIssueMap(issues), [issues]);
   const { state, counts, visible, selected, dispatch, select, step } = useReview(issues);
@@ -27,6 +28,7 @@ export default function Desk() {
 
   const [tab, setTab] = useState<'doc' | 'issues' | 'evidence'>('doc');
   const [libraryOpen, setLibraryOpen] = useState(false);
+  const [pasteOpen, setPasteOpen] = useState(false);
   const [exportLabel, setExportLabel] = useState('导出批注');
   const exportTimer = useRef<number | null>(null);
 
@@ -90,7 +92,7 @@ export default function Desk() {
 
   const docPane = (
     <DocumentPane
-      draft={DRAFT}
+      draft={draft}
       issueMap={issueMap}
       showMarks={state.showMarks}
       selectedKey={state.selectedKey}
@@ -121,8 +123,9 @@ export default function Desk() {
   return (
     <div className={`${s.app} ${compact ? s.appCompact : ''}`}>
       <AppBar
-        fileName="bad-draft.md"
+        fileName={content === DRAFT_TEXT ? 'bad-draft.md' : '自定义稿件'}
         onRerun={onRerun}
+        onPaste={() => setPasteOpen(true)}
         onExport={onExport}
         exportLabel={exportLabel}
       />
@@ -189,6 +192,17 @@ export default function Desk() {
           </div>
           <EvidencePane issue={selected} rule={rule} headless />
         </div>
+      ) : null}
+
+      {pasteOpen ? (
+        <SubmitDialog
+          onClose={() => setPasteOpen(false)}
+          onSubmit={(text) => {
+            dispatch({ type: 'reset' });
+            submit(text);
+            setPasteOpen(false);
+          }}
+        />
       ) : null}
     </div>
   );

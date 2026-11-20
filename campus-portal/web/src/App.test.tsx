@@ -23,6 +23,29 @@ function mockReview(body: unknown = reviewFixture) {
   );
 }
 
+/** 多次请求依次返回不同响应（用于验证粘贴新稿件后的动态替换） */
+function mockReviewSequence(...bodies: unknown[]) {
+  let i = 0;
+  vi.stubGlobal(
+    'fetch',
+    vi.fn().mockImplementation(() => {
+      const body = bodies[Math.min(i++, bodies.length - 1)];
+      return Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(body),
+      });
+    }),
+  );
+}
+
+/** 只保留一条命中的响应：新稿件的 NAME-001@3 */
+const customFixture = {
+  ...reviewFixture,
+  findings: [reviewFixture.findings[3]!],
+  counts: { total: 1, error: 1, warn: 0, info: 0 },
+};
+
 describe('校稿台（接真实 /api/review）', () => {
   beforeEach(() => {
     window.location.hash = '#/desk';
@@ -117,5 +140,33 @@ describe('校稿台（接真实 /api/review）', () => {
 
     fireEvent.click(screen.getByRole('button', { name: '重新校验' }));
     await waitFor(() => expect(fetchMock).toHaveBeenCalledTimes(2));
+  });
+
+  it('粘贴自定义稿件：提交新正文后按新命中替换清单并标红', async () => {
+    const customText = '【媒体传讯处】测试\n通知动态\n港城大（东莞）校长出席活动。';
+    mockReviewSequence(reviewFixture, customFixture);
+    render(<App />);
+    await ready();
+
+    fireEvent.click(screen.getByRole('button', { name: '粘贴稿件' }));
+    const dialog = await screen.findByRole('dialog', { name: '粘贴稿件' });
+    fireEvent.change(within(dialog).getByLabelText('稿件正文'), {
+      target: { value: customText },
+    });
+    fireEvent.click(within(dialog).getByRole('button', { name: '校验这篇' }));
+
+    await waitFor(() => expect(list()).toHaveLength(1));
+    const fetchMock = vi.mocked(fetch);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+    expect(JSON.parse((fetchMock.mock.calls[1]![1] as RequestInit).body as string)).toEqual({
+      content: customText,
+      mode: 'submission',
+    });
+    expect(screen.getByText('自定义稿件')).toBeTruthy();
+
+    // 新正文按 hit 标红：第 3 行的「港城大（东莞）」可点回依据
+    const marked = screen.getByText('港城大（东莞）');
+    expect(marked.getAttribute('role')).toBe('button');
+    expect(marked.getAttribute('title')).toContain('点击查看依据');
   });
 });

@@ -91,6 +91,27 @@ class TestReview:
         assert ids and all(not i.startswith("LAYOUT") for i in ids)
 
 
+class TestHitField:
+    """每条命中都带精确原文子串，前端据此给任意稿件标红。"""
+
+    def test_every_finding_has_hit_in_source(self) -> None:
+        from checker import load_rules, run
+
+        text = _sample("bad-draft")
+        rules, _ = load_rules()
+        findings = run(text, rules)
+        assert findings
+        for f in findings:
+            assert f["hit"], f"{f['rule_id']} 缺 hit"
+            assert f["hit"] in text, f"{f['rule_id']} 的 hit 不是原文子串"
+
+    def test_api_returns_hit(self, client: TestClient) -> None:
+        findings = client.post(
+            "/api/review", json={"content": _sample("bad-draft")}
+        ).json()["findings"]
+        assert all(f["hit"] for f in findings)
+
+
 class TestModes:
     """mode=submission（默认）全量规则；archive 跳过投稿格式规则（SUB-*）。"""
 

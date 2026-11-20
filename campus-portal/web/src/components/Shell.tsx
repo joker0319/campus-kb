@@ -12,10 +12,11 @@ interface AppBarProps {
   fileName: string;
   onRerun: () => void;
   onExport: () => void;
+  onPaste: () => void;
   exportLabel: string;
 }
 
-export function AppBar({ fileName, onRerun, onExport, exportLabel }: AppBarProps) {
+export function AppBar({ fileName, onRerun, onExport, onPaste, exportLabel }: AppBarProps) {
   return (
     <header className={`${s.bar} js-anim`} style={delay('0s')}>
       <div className={s.crest}>CITYU</div>
@@ -30,6 +31,9 @@ export function AppBar({ fileName, onRerun, onExport, exportLabel }: AppBarProps
         <span>待审</span>
       </div>
       <div className={s.barRight}>
+        <button className={s.btn} onClick={onPaste} type="button">
+          粘贴稿件
+        </button>
         <button className={s.btn} onClick={onRerun} type="button">
           <IconRefresh />
           重新校验
