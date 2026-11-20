@@ -24,7 +24,7 @@
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
 | 薄后端（FastAPI） | ✅ 首版可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`，27 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件送审，按后端精确命中动态标红；档案检索接 `/api/search` |
-| 首页 | ✅ 完成 | 导航 + 主体 + 底部结构；墨点是「知识库的个人助手」入口，指向 `#/assistant` |
+| 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
 | 助手页 `#/assistant` | ✅ 界面壳 | 对话界面与三项能力（问规范 / 查档案 / 校稿件）已搭好，工具接入中、输入禁用、不伪装回答 |
 | 数据库 / 投稿流程 | ⏳ 未开始 | 选型见 [ADR-001](campus-portal/docs/tech-selection.md) |
 | docx 解析 / 导出批注 | ⏳ 未开始 | 目前只支持粘贴纯文本 |
@@ -53,7 +53,7 @@
 │   ├── prototype/                 # 早期静态原型
 │   └── web/                       # React 19 + TS + Vite 前端
 │       ├── src/pages/             # Landing（首页）、Desk（校稿台）、Assistant（助手壳）
-│       ├── src/components/        # 三栏校稿台、PetMascot（助手入口）、SubmitDialog
+│       ├── src/components/        # 三栏校稿台、CaseStage（首页 3D 轮播）、PetMascot（助手入口）、SubmitDialog
 │       ├── src/lib/               # review / segments / buildDraft / api / countUp 纯函数
 │       └── src/styles/            # tokens.css 单一来源 + CSS Modules
 └── .workbuddy/skills/campus-design-language/   # 设计语言规范
@@ -87,7 +87,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 **首页 `#/`**
 
-- 回归首页本分：顶部导航（首页 / 助手 / 校稿台）+ 主体 + 页脚，去掉了统计条、能力卡片、流程条与 3D 校验轮播；
+- 回归首页本分：顶部导航（首页 / 助手 / 校稿台）+ 主体 + 页脚，去掉了统计条、能力卡片、流程条；保留 hero 右栏的 3D 稿件卡轮播（NAME-001 / SOEV-002 / RANK-001 三个真实命中，5.6s 切换、悬停暂停、reduced-motion 降级）；
 - 墨点是「知识库的个人助手」的入口：SVG 精灵保留呼吸 / 眨眼 / 瞳孔跟随，点击进 `#/assistant`；
 - 首页文案只讲定位，不堆校验数字（「规范、档案与稿件检查，都从一个入口进去」）。
 
@@ -114,7 +114,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 55 个（Vitest + Testing Library），后端 27 个（pytest）；
+- 测试：前端 59 个（Vitest + Testing Library），后端 27 个（pytest）；
 - 运行时依赖只有 React 本体 + FastAPI。
 
 ## 7. 开发日志
@@ -126,7 +126,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - **11-18 后端**：后端语言定为 Python（ADR-002），FastAPI 封装引擎并锁基线。
 - **11-20 梳理**：清理目录与文档。
 - **11-20 任意稿件**：后端 finding 增加精确 `hit`，前端按 `hit` 动态标红；校稿台支持粘贴任意正文送审。
-- **11-20 首页改版**：首页回归导航 + 主体 + 底部，去掉校验罗列与 3D 轮播；墨点改为「知识库的个人助手」入口；新增 `#/assistant` 界面壳（能力待接入）。
+- **11-20 首页改版**：首页回归导航 + 主体 + 底部，去掉校验罗列；墨点改为「知识库的个人助手」入口；新增 `#/assistant` 界面壳（能力待接入）。3D 轮播按用户要求保留在 hero 右栏原位置。
 
 踩过的坑（均已写进代码注释或测试）：
 
@@ -137,7 +137,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 | 类名不生效 | TSX 用字面量 `"in"`，CSS Modules 会 hash | 一律 `s.in` |
 | 测试多次命中元素 | 未开 `globals` 时 Testing Library 不自动 cleanup | `setup.ts` 加 `afterEach(cleanup)` |
 | 小助手放大后几乎没变 | SVG `viewBox` 留白，放大的是透明区 | viewBox 裁到图形本身 |
-| 悬停后轮播永久停住（组件已随首页改版移除） | 移出只回正 3D 倾斜，没恢复定时器 | 移出解除暂停，假计时器测试锁住 |
+| 悬停后轮播永久停住 | 移出只回正 3D 倾斜，没恢复定时器 | 移出解除暂停，假计时器测试锁住 |
 
 ## 8. 已知限制
 

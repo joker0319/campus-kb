@@ -110,11 +110,21 @@
 }
 
 .hero {
+  display: grid;
+  /* 左文案 + 右轮播；文案收窄给 3D 卡堆让位 */
+  grid-template-columns: minmax(0, 0.9fr) minmax(0, 1.1fr);
+  gap: clamp(28px, 3.6vw, 52px);
+  align-items: center;
   width: 100%;
-  padding: clamp(56px, 10vh, 120px) 0 clamp(48px, 9vh, 96px);
+  padding: clamp(48px, 7.5vh, 92px) 0 clamp(40px, 6vh, 72px);
 }
 .heroCopy {
-  max-width: 780px;
+  min-width: 0;
+}
+.heroStage {
+  min-width: 0;
+  /* 给 3D 卡堆的阴影与倾斜留空间，否则被 page 的 overflow-x:clip 切掉 */
+  padding: 6px 2px 0;
 }
 .kicker {
   font-size: 13px;
@@ -125,7 +135,7 @@
 }
 .title {
   font-family: var(--serif);
-  font-size: clamp(3.4rem, 8vw, 6.2rem);
+  font-size: clamp(2.9rem, 5.6vw, 4.6rem);
   font-weight: 700;
   letter-spacing: -0.035em;
   line-height: 1.08;
@@ -234,6 +244,17 @@
   }
   .bgAurora {
     animation: none;
+  }
+}
+
+@media (max-width: 1020px) {
+  .hero {
+    grid-template-columns: minmax(0, 1fr);
+    gap: 30px;
+    padding-top: clamp(36px, 6vh, 64px);
+  }
+  .heroStage {
+    order: 2;
   }
 }
 

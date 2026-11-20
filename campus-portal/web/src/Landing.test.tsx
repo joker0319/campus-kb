@@ -14,13 +14,18 @@ describe('首页', () => {
     expect(screen.getByRole('link', { name: '进入知识库的个人助手' })).toBeTruthy();
   });
 
-  it('校验相关的罗列块已移除', () => {
+  it('统计条与 bento 卡片已移除，3D 轮播回到 hero 右栏', () => {
     render(<App />);
     expect(screen.queryByText('可执行校验规则')).toBeNull();
     expect(screen.queryByText('表述校对')).toBeNull();
     expect(screen.queryByText('矛盾捕获，不替人拍板')).toBeNull();
     expect(screen.queryByText('规划中')).toBeNull();
     expect(screen.queryByText(/典型问题命中/)).toBeNull();
+
+    // 轮播（真实命中案例）保留在 hero 右栏
+    const stage = document.querySelector('[class*="heroStage"]');
+    expect(stage).not.toBeNull();
+    expect(stage?.querySelector('[class*="sheet"]')).not.toBeNull();
   });
 
   it('导航与 CTA 指向助手和校稿台，顶栏提供返回', async () => {

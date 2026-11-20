@@ -8,7 +8,7 @@
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # 类型检查 + 生产构建 → dist/
-npm test           # 55 个用例（含真实接口夹具测试）
+npm test           # 59 个用例（含真实接口夹具测试）
 npm run lint       # ESLint（含类型感知规则）
 npm run format     # Prettier 格式化
 npm run check      # 类型 + lint + 格式 + 测试，提交前跑这个
@@ -41,8 +41,8 @@ src/
   hooks/useReviewRequest.ts  校验请求：loading/ready/error + 重试/取消 + 换稿送审
   hooks/useMediaQuery.ts
   components/           Shell(AppBar/Rail/StatusBar/Tabs)、DocumentPane、IssueList、EvidencePane
-                        PetMascot（墨点 → 助手入口）、CorpusSearch（档案检索抽屉）
-                        SubmitDialog（粘贴稿件弹窗）
+                        CaseStage（首页 3D 稿件卡轮播）、PetMascot（墨点 → 助手入口）
+                        CorpusSearch（档案检索抽屉）、SubmitDialog（粘贴稿件弹窗）
   styles/tokens.css     设计 token 唯一来源
   styles/*.module.css   各页样式
 ```

@@ -1,5 +1,6 @@
 import { useEffect, useState } from 'react';
 import type { CSSProperties } from 'react';
+import { CaseStage } from '../components/CaseStage';
 import { PetMascot } from '../components/PetMascot';
 import s from '../styles/landing.module.css';
 
@@ -66,6 +67,11 @@ export default function Landing() {
                 去校稿台
               </a>
             </div>
+          </div>
+
+          {/* 3D 稿件卡轮播：回到 hero 右栏原位置 */}
+          <div className={`${s.heroStage} ${s.in}`} style={D('.3s')}>
+            <CaseStage />
           </div>
         </section>
       </main>
