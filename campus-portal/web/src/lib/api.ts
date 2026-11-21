@@ -65,3 +65,55 @@ export async function postReview(
     durationMs: Math.round(performance.now() - started),
   };
 }
+
+/** GET /api/rules 的一条规则（见 campus-kb/api/main.py list_rules） */
+export interface ApiRule {
+  id: string;
+  category: string;
+  severity: string;
+  type: string;
+  desc: string;
+  suggestion: string;
+  source: string;
+  file: string;
+}
+
+export interface RulesResult {
+  total: number;
+  rules: readonly ApiRule[];
+}
+
+/** 取全部规则，供助手「问规范」按关键词在前端确定性筛选。 */
+export async function getRules(signal?: AbortSignal): Promise<RulesResult> {
+  const r = await fetch('/api/rules', { signal });
+  if (!r.ok) throw new Error(`规则接口返回 ${r.status}`);
+  const data = (await r.json()) as { total: number; rules: ApiRule[] };
+  return { total: data.total, rules: data.rules };
+}
+
+/** GET /api/search 的一条命中（见 campus-kb/api/search.py） */
+export interface ApiArchiveHit {
+  file: string;
+  line: number;
+  excerpt: string;
+  hits: number;
+}
+
+export interface ArchiveResult {
+  query: string;
+  total: number;
+  scanned: number;
+  results: readonly ApiArchiveHit[];
+}
+
+/** 语料库全文检索：多关键词空格分隔 AND。 */
+export async function searchArchive(
+  query: string,
+  limit = 20,
+  signal?: AbortSignal,
+): Promise<ArchiveResult> {
+  const params = new URLSearchParams({ q: query, limit: String(limit) });
+  const r = await fetch(`/api/search?${params.toString()}`, { signal });
+  if (!r.ok) throw new Error(`检索接口返回 ${r.status}`);
+  return (await r.json()) as ArchiveResult;
+}
