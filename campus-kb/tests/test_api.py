@@ -6,11 +6,13 @@
 任何改动导致这两个数字变化，必须先确认是规则更新所致并同步 README。
 """
 
+import asyncio
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
+from api import deepseek
 from api.main import app
 from api.search import load_corpus, search
 
@@ -256,3 +258,95 @@ class TestReviewFile:
     def test_rejects_corrupt_docx(self, client: TestClient) -> None:
         r = client.post("/api/review-file", files={"file": ("broken.docx", b"not a real docx")})
         assert r.status_code == 400
+
+
+class TestChat:
+    """AI 问答：密钥缺失明确报错；上下文来自检索；端点契约稳定。"""
+
+    def test_without_key_returns_503_with_clear_message(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(
+            deepseek, "get_settings", lambda: deepseek.Settings(deepseek_api_key="")
+        )
+        r = client.post("/api/chat", json={"message": "校名有什么规范？"})
+        assert r.status_code == 503
+        assert "DEEPSEEK_API_KEY" in r.json()["detail"]
+
+    def test_empty_message_rejected(self, client: TestClient) -> None:
+        assert client.post("/api/chat", json={"message": ""}).status_code == 422
+
+    def test_build_context_picks_rules_and_archives(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import checker
+
+        rules, _ = checker.load_rules()
+        context, sources = deepseek.build_context("校名首次出现要用全称吗？", rules)
+        assert "[S1]" in context
+        assert any(s["kind"] == "rule" for s in sources)
+        assert any(s["kind"] == "archive" for s in sources)
+        assert all(s["ref"] for s in sources)
+
+    def test_ask_builds_prompt_and_parses_response(
+        self, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        import checker
+
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        captured: dict = {}
+
+        class FakeResponse:
+            def raise_for_status(self) -> None:
+                return None
+
+            def json(self) -> dict:
+                return {"choices": [{"message": {"content": "根据 [S1]，首次用全称。"}}]}
+
+        class FakeClient:
+            def __init__(self, **_kwargs: object) -> None:
+                return None
+
+            async def __aenter__(self) -> "FakeClient":
+                return self
+
+            async def __aexit__(self, *_args: object) -> bool:
+                return False
+
+            async def post(self, url: str, **kwargs: object) -> FakeResponse:
+                captured["url"] = url
+                captured["kwargs"] = kwargs
+                return FakeResponse()
+
+        monkeypatch.setattr(deepseek.httpx, "AsyncClient", FakeClient)
+        rules, _ = checker.load_rules()
+        result = asyncio.run(deepseek.ask("校名首次出现要用全称吗？", rules, settings=settings))
+
+        assert captured["url"] == "https://api.deepseek.com/chat/completions"
+        kwargs = captured["kwargs"]
+        assert kwargs["json"]["model"] == "test-model"
+        messages = kwargs["json"]["messages"]
+        assert messages[0]["role"] == "system"
+        assert "[S1]" in messages[0]["content"]
+        assert messages[-1]["role"] == "user"
+        assert result["answer"] == "根据 [S1]，首次用全称。"
+        assert result["sources"]
+        assert result["model"] == "test-model"
+
+    def test_chat_endpoint_returns_answer_and_sources(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        async def fake_ask(question: str, rules: list[dict], history=None, settings=None) -> dict:
+            return {
+                "answer": "首次出现请用全称。",
+                "sources": [
+                    {"ref": "S1", "kind": "rule", "title": "NAME-001", "detail": "校名用全称"}
+                ],
+                "model": "deepseek-chat",
+            }
+
+        monkeypatch.setattr(deepseek, "ask", fake_ask)
+        r = client.post("/api/chat", json={"message": "校名规范？", "history": []})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["answer"] == "首次出现请用全称。"
+        assert data["sources"][0]["ref"] == "S1"
+        assert data["model"] == "deepseek-chat"

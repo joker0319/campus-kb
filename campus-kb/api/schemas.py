@@ -70,3 +70,26 @@ class ReviewFileResponse(BaseModel):
     counts: Counts
     ruleCount: int
     report: str
+
+
+class ChatMessage(BaseModel):
+    role: str = Field(pattern="^(user|assistant)$")
+    content: str = Field(min_length=1, max_length=8000)
+
+
+class ChatRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000, description="用户本轮提问")
+    history: list[ChatMessage] = Field(default_factory=list, description="最近若干轮对话")
+
+
+class ChatSource(BaseModel):
+    ref: str = Field(description="片段编号，如 S1 / A1，供模型回答引用")
+    kind: str = Field(description="rule=规范 / archive=档案")
+    title: str
+    detail: str
+
+
+class ChatResponse(BaseModel):
+    answer: str
+    sources: list[ChatSource]
+    model: str

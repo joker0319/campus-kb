@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { postReview, reviewFile, toIssue, toSeverity } from './api';
+import { postChat, postReview, reviewFile, toIssue, toSeverity } from './api';
 import fixture from '../test/fixtures/review.json';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -79,5 +79,41 @@ describe('API 映射层', () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
     const file = new File(['bad'], 'x.docx');
     await expect(reviewFile(file)).rejects.toThrow('文件校验接口返回 400');
+  });
+
+  it('postChat 带提问与历史调用 /api/chat，返回回答与来源', async () => {
+    const body = {
+      answer: '首次出现请用全称。',
+      sources: [{ ref: 'S1', kind: 'rule', title: 'NAME-001', detail: '校名用全称' }],
+      model: 'deepseek-chat',
+    };
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve(body) }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await postChat('校名规范？', [{ role: 'user', content: '你好' }]);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/chat');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse((init?.body as string) ?? '{}')).toEqual({
+      message: '校名规范？',
+      history: [{ role: 'user', content: '你好' }],
+    });
+    expect(result.answer).toBe(body.answer);
+    expect(result.sources).toHaveLength(1);
+    expect(result.model).toBe('deepseek-chat');
+  });
+
+  it('postChat 透传后端 detail（如未配置密钥）', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 503,
+        json: () => Promise.resolve({ detail: '未配置 DEEPSEEK_API_KEY' }),
+      }),
+    );
+    await expect(postChat('你好')).rejects.toThrow('未配置 DEEPSEEK_API_KEY');
   });
 });

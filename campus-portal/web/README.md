@@ -8,7 +8,7 @@
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # 类型检查 + 生产构建 → dist/
-npm test           # 71 个用例（含真实接口夹具测试）
+npm test           # 76 个用例（含真实接口夹具测试）
 npm run lint       # ESLint（含类型感知规则）
 npm run format     # Prettier 格式化
 npm run check      # 类型 + lint + 格式 + 测试，提交前跑这个
@@ -29,14 +29,14 @@ src/
   App.tsx               hash 路由：#/ 首页 · #/desk 校稿台 · #/assistant 助手
   pages/Landing.tsx     首页（导航 + 主体 + 底部，动效编排）
   pages/Desk.tsx        校稿台（克制模式）
-  pages/Assistant.tsx   助手页（三项确定性工具：问规范 / 查档案 / 校稿件）
+  pages/Assistant.tsx   助手页（三项确定性工具 + AI 问答）
   types.ts              领域模型（Issue 用 `${ruleId}@${line}` 作稳定 key）
   data/content.ts       送审稿件与规则出处（依据栏）；命中不再内置
   lib/review.ts         纯函数：筛选、计数、键盘导航、标记严重度
-  lib/api.ts            /api/review + /api/review-file：finding → Issue 映射、严重度收敛
+  lib/api.ts            /api/review + /api/review-file + /api/chat：映射、收敛、AI 问答
   lib/segments.ts       按命中词切分正文（split + 捕获组，比 replace 安全）
   lib/buildDraft.ts     任意正文 + 后端精确 hit → 带 issueKeys 的 Draft（动态标红）
-  lib/assistantTools.ts 助手三工具的确定性回答生成（查不到直说，不臆测）
+  lib/assistantTools.ts 三工具的确定性回答 + AI 回答映射（generated 标记，不与规则结论混同）
   lib/countUp.ts        数字滚动（进度钳制，防 rAF 负时间差）
   hooks/useReview.ts    useReducer 状态机（选中/筛选/忽略/导航）
   hooks/useReviewRequest.ts  校验请求：loading/ready/error + 重试/取消 + 粘贴/上传 docx 换稿
@@ -57,7 +57,7 @@ src/
 按行号与 `hit` 切分正文、挂上 `issueKeys`，因此新稿件也能逐处标红并点回依据，不依赖内置样例。
 docx 路径下「导出批注」会把报告下载为 `.md`（文件名沿用原稿）。
 Vite 开发代理把 `/api` 转发到 `127.0.0.1:8000`（FastAPI）。
-左栏「资源」打开档案检索抽屉，调 `GET /api/search`；助手页调 `/api/rules`、`/api/search`、`/api/review`。
+左栏「资源」打开档案检索抽屉，调 `GET /api/search`；助手页调 `/api/rules`、`/api/search`、`/api/review`、`/api/chat`（AI 问答，需后端配置 `DEEPSEEK_API_KEY`）。
 接口失败显示错误态与「重试」，不回落假数据；测试用 `src/test/fixtures/review.json`（真实 API 响应）mock fetch。
 
 ## 刻意的取舍

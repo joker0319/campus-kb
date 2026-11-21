@@ -20,10 +20,13 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import checker  # noqa: E402  # sys.path 调整必须在前
+from . import deepseek  # noqa: E402
 from . import docx_io  # noqa: E402
 from . import search as corpus_search  # noqa: E402
 
 from .schemas import (  # noqa: E402
+    ChatRequest,
+    ChatResponse,
     Counts,
     Finding,
     ReviewFileResponse,
@@ -169,3 +172,23 @@ async def review_file(engine: EngineDep, file: UploadFile = File(...)) -> Review
         ruleCount=applied,
         report=report,
     )
+
+
+@app.post("/api/chat")
+async def chat(req: ChatRequest, engine: EngineDep) -> ChatResponse:
+    """AI 问答：检索知识库片段作为上下文，再交给 DeepSeek 解读。
+
+    与确定性工具分开：本接口不产出校验结论，规则命中一律以 /api/review 为准。
+    未配置密钥 503；上游调用失败 502。
+    """
+    try:
+        result = await deepseek.ask(
+            req.message,
+            engine[0],
+            [m.model_dump() for m in req.history],
+        )
+    except deepseek.DeepSeekNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except deepseek.DeepSeekUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return ChatResponse(**result)

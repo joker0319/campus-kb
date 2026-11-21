@@ -107,6 +107,44 @@ export async function reviewFile(file: File, signal?: AbortSignal): Promise<Revi
   };
 }
 
+/** POST /api/chat 的请求与响应（见 campus-kb/api/schemas.py） */
+export interface ChatTurn {
+  readonly role: 'user' | 'assistant';
+  readonly content: string;
+}
+
+export interface ChatSource {
+  readonly ref: string;
+  readonly kind: string;
+  readonly title: string;
+  readonly detail: string;
+}
+
+export interface ChatResult {
+  readonly answer: string;
+  readonly sources: readonly ChatSource[];
+  readonly model: string;
+}
+
+/** AI 问答：把最近若干轮对话带上，后端检索知识库后交给 DeepSeek。 */
+export async function postChat(
+  message: string,
+  history: readonly ChatTurn[] = [],
+  signal?: AbortSignal,
+): Promise<ChatResult> {
+  const r = await fetch('/api/chat', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history }),
+    signal,
+  });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `AI 问答接口返回 ${r.status}`);
+  }
+  return (await r.json()) as ChatResult;
+}
+
 /** GET /api/rules 的一条规则（见 campus-kb/api/main.py list_rules） */
 export interface ApiRule {
   id: string;

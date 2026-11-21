@@ -1,19 +1,22 @@
 /**
- * 助手的确定性工具层。
+ * 助手的工具层。
  *
- * 不接大模型：三个能力各自对应一个后端接口，本模块只把接口响应整理成
- * 「逐条带出处」的回答块。查不到就明确说查不到，不臆测、不补造结论。
+ * 前三个是确定性工具：各自对应一个本地接口，本模块只把响应整理成
+ * 「逐条带出处」的回答块，查不到就直说，不臆测。
+ * 第四个是 AI 问答：由 DeepSeek 基于后端检索到的知识库片段生成，
+ * 明确标记 generated，前端据此显示「AI 生成」提示，不与规则结论混同。
  * 纯函数，便于测试。
  */
 
-import type { ArchiveResult, ReviewResult, RulesResult } from './api';
+import type { ArchiveResult, ChatResult, ReviewResult, RulesResult } from './api';
 
-export type ToolKind = 'rules' | 'search' | 'review';
+export type ToolKind = 'rules' | 'search' | 'review' | 'chat';
 
 export const TOOLS: readonly { kind: ToolKind; name: string; desc: string }[] = [
   { kind: 'rules', name: '问规范', desc: '按关键词查规则，逐条给依据。' },
   { kind: 'search', name: '查档案', desc: '在入库档案里全文检索，返回文件与行号。' },
   { kind: 'review', name: '校稿件', desc: '粘一段正文，命中处给改法。' },
+  { kind: 'chat', name: 'AI 问答', desc: '就知识库自由提问，基于检索片段作答并给出处。' },
 ] as const;
 
 /** 一条回答项：标题 + 出处/定位 + 说明 */
@@ -28,10 +31,28 @@ export interface Answer {
   readonly tool: ToolKind;
   readonly summary: string;
   readonly items: readonly AnswerItem[];
+  /** true = 大模型生成；前端必须标注，不能与确定性规则结论混同 */
+  readonly generated?: boolean;
+  readonly model?: string;
 }
 
 const severityLabel = (s: string): string =>
   s === 'error' ? '错误' : s === 'warn' ? '警告' : '提示';
+
+/** AI 问答：展示模型回答，并把后端检索到的片段逐条列出作为依据。 */
+export function answerFromChat(result: ChatResult): Answer {
+  return {
+    tool: 'chat',
+    summary: result.answer,
+    items: result.sources.map((s) => ({
+      title: `${s.ref} · ${s.title}`,
+      meta: s.kind === 'rule' ? '规范片段' : '档案片段',
+      detail: s.detail,
+    })),
+    generated: true,
+    model: result.model,
+  };
+}
 
 /** 问规范：在本地已取回的规则集里按关键词确定性筛选（不调用 LLM）。 */
 export function answerFromRules(query: string, result: RulesResult): Answer {

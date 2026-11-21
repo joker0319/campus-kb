@@ -50,6 +50,13 @@ describe('助手页', () => {
             ruleCount: 19,
           });
         }
+        if (url.includes('/api/chat')) {
+          return jsonResponse({
+            answer: '根据 [S1]，首次出现请用全称。',
+            sources: [{ ref: 'S1', kind: 'rule', title: 'NAME-001', detail: '校名首次出现用全称' }],
+            model: 'deepseek-chat',
+          });
+        }
         throw new Error(`unexpected url ${url}`);
       }),
     );
@@ -60,15 +67,15 @@ describe('助手页', () => {
     vi.unstubAllGlobals();
   });
 
-  it('渲染助手界面并展示三项可用工具', async () => {
+  it('渲染助手界面并展示四项可用工具', async () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy();
     });
     expect(screen.getByRole('link', { name: '← 返回首页' })).toBeTruthy();
     expect(
-      screen.getAllByRole('button', { name: /问规范|查档案|校稿件/ }).length,
-    ).toBeGreaterThanOrEqual(3);
+      screen.getAllByRole('button', { name: /问规范|查档案|校稿件|AI 问答/ }).length,
+    ).toBeGreaterThanOrEqual(4);
     expect(screen.getByLabelText<HTMLInputElement>('助手输入框').disabled).toBe(false);
   });
 
@@ -122,6 +129,38 @@ describe('助手页', () => {
 
     await waitFor(() => {
       expect(screen.getByText(/未发现问题/)).toBeTruthy();
+    });
+  });
+
+  it('AI 问答：展示 DeepSeek 回答、生成标记与所引片段', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
+    );
+
+    const chips = screen.getAllByRole('button', { name: 'AI 问答' });
+    await user.click(chips[chips.length - 1]!);
+    await user.type(screen.getByLabelText('助手输入框'), '校名怎么写？');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/首次出现请用全称/)).toBeTruthy();
+    });
+    expect(screen.getByText(/AI 生成 · deepseek-chat/)).toBeTruthy();
+    expect(screen.getByText(/S1 · NAME-001/)).toBeTruthy();
+    expect(screen.getByText(/规范片段/)).toBeTruthy();
+    expect(screen.getByText(/稿件是否合规请以「校稿件」的确定性结果为准/)).toBeTruthy();
+
+    const fetchMock = vi.mocked(fetch);
+    const chatCall = fetchMock.mock.calls.find(([input]) => {
+      const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
+      return url.includes('/api/chat');
+    });
+    expect(chatCall).toBeTruthy();
+    expect(JSON.parse((chatCall![1] as RequestInit).body as string)).toEqual({
+      message: '校名怎么写？',
+      history: [],
     });
   });
 });

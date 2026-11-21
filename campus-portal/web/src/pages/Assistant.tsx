@@ -1,7 +1,15 @@
 import { useEffect, useRef, useState } from 'react';
-import { getRules, postReview, searchArchive, type RulesResult } from '../lib/api';
+import {
+  getRules,
+  postChat,
+  postReview,
+  searchArchive,
+  type ChatTurn,
+  type RulesResult,
+} from '../lib/api';
 import {
   answerFromArchive,
+  answerFromChat,
   answerFromReview,
   answerFromRules,
   TOOLS,
@@ -22,6 +30,7 @@ const PLACEHOLDER: Record<ToolKind, string> = {
   rules: '输入规范关键词，如「标点」「序数」「校名」',
   search: '输入档案检索词，多个词用空格分隔',
   review: '粘贴一段正文，检查写作规范',
+  chat: '就知识库自由提问，如「首次提到校名要注意什么？」',
 };
 
 /** 知识库的个人助手：三个确定性工具，逐条给出处，查不到直说。 */
@@ -60,6 +69,18 @@ export default function Assistant() {
     setTurns((prev) => [...prev, { id, query, pending: true }]);
     setDraft('');
 
+    // 只把 AI 问答的轮次带进上下文，避免确定性工具结果干扰模型判断
+    const history: ChatTurn[] = turns
+      .flatMap((t) =>
+        t.answer?.tool === 'chat'
+          ? [
+              { role: 'user' as const, content: t.query },
+              { role: 'assistant' as const, content: t.answer.summary },
+            ]
+          : [],
+      )
+      .slice(-12);
+
     try {
       if (tool === 'rules') {
         if (rulesError || !rules) throw new Error(rulesError || '规则尚未加载完成');
@@ -67,9 +88,12 @@ export default function Assistant() {
       } else if (tool === 'search') {
         const res = await searchArchive(query);
         patch(id, { answer: answerFromArchive(query, res), pending: false });
-      } else {
+      } else if (tool === 'review') {
         const res = await postReview(query);
         patch(id, { answer: answerFromReview(res), pending: false });
+      } else {
+        const res = await postChat(query, history);
+        patch(id, { answer: answerFromChat(res), pending: false });
       }
     } catch (err: unknown) {
       patch(id, {
@@ -86,7 +110,7 @@ export default function Assistant() {
           ← 返回首页
         </a>
         <span className={s.barName}>知识库的个人助手</span>
-        <span className={s.barTag}>本地接口 · 逐条给依据</span>
+        <span className={s.barTag}>本地规则 + DeepSeek · 逐条给依据</span>
       </header>
 
       <div className={s.body}>
@@ -107,9 +131,9 @@ export default function Assistant() {
               </div>
               <h1 className={s.title}>有什么可以帮你？</h1>
               <p className={s.sub}>
-                选一个工具，我基于 19 条可溯源规则和入库档案回答。
+                前三个工具基于 19 条可溯源规则和入库档案，逐条给出处；
                 <br />
-                每条都给出处，查不到就直说不知道。
+                AI 问答由 DeepSeek 基于检索片段作答，并标明生成来源。
               </p>
             </section>
           )}
@@ -137,7 +161,9 @@ export default function Assistant() {
               <div className={s.turn} key={t.id}>
                 <div className={s.userMsg}>{t.query}</div>
                 {t.pending ? (
-                  <div className={s.botMsg}>正在查询…</div>
+                  <div className={s.botMsg}>
+                    {tool === 'chat' ? '正在检索知识库并思考…' : '正在查询…'}
+                  </div>
                 ) : t.error ? (
                   <div className={s.botMsg}>
                     <p className={s.ansSummary}>查询失败：{t.error}</p>
@@ -148,7 +174,15 @@ export default function Assistant() {
                     <span className={s.ansTool}>
                       {TOOLS.find((x) => x.kind === t.answer?.tool)?.name}
                     </span>
-                    <p className={s.ansSummary}>{t.answer.summary}</p>
+                    {t.answer.generated ? (
+                      <span className={s.ansAi}>AI 生成 · {t.answer.model}</span>
+                    ) : null}
+                    <p className={`${s.ansSummary} ${t.answer.generated ? s.ansAiText : ''}`}>
+                      {t.answer.summary}
+                    </p>
+                    {t.answer.items.length > 0 ? (
+                      <div className={s.ansSrcHead}>本轮依据</div>
+                    ) : null}
                     {t.answer.items.map((item, i) => (
                       <div className={s.ansItem} key={`${item.meta}-${i}`}>
                         <div className={s.ansTitle}>{item.title}</div>
@@ -156,6 +190,11 @@ export default function Assistant() {
                         {item.detail && <div className={s.ansDetail}>{item.detail}</div>}
                       </div>
                     ))}
+                    {t.answer.generated ? (
+                      <p className={s.ansAiNote}>
+                        由 DeepSeek 生成，仅供参考；稿件是否合规请以「校稿件」的确定性结果为准。
+                      </p>
+                    ) : null}
                   </div>
                 ) : null}
               </div>
@@ -199,7 +238,7 @@ export default function Assistant() {
             发送
           </button>
         </div>
-        <p className={s.hint}>确定性工具 · 规则与档案来自本地知识库，不生成臆测内容</p>
+        <p className={s.hint}>前三项为确定性工具 · AI 问答由 DeepSeek 基于检索片段生成，仅供参考</p>
       </div>
     </div>
   );

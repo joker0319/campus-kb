@@ -1,6 +1,12 @@
 import { describe, expect, it } from 'vitest';
-import { answerFromArchive, answerFromReview, answerFromRules } from './assistantTools';
-import type { ArchiveResult, ReviewResult, RulesResult } from './api';
+import {
+  answerFromArchive,
+  answerFromChat,
+  answerFromReview,
+  answerFromRules,
+  TOOLS,
+} from './assistantTools';
+import type { ArchiveResult, ChatResult, ReviewResult, RulesResult } from './api';
 
 const rules: RulesResult = {
   total: 2,
@@ -28,7 +34,30 @@ const rules: RulesResult = {
   ],
 };
 
-describe('assistantTools 确定性回答', () => {
+describe('assistantTools 回答映射', () => {
+  it('工具清单包含 AI 问答', () => {
+    expect(TOOLS.map((t) => t.kind)).toEqual(['rules', 'search', 'review', 'chat']);
+  });
+
+  it('AI 问答：回答正文保留，来源逐条列出并标记 generated', () => {
+    const data: ChatResult = {
+      answer: '根据 [S1]，首次出现应使用全称。',
+      sources: [
+        { ref: 'S1', kind: 'rule', title: 'NAME-001', detail: '校名首次出现用全称' },
+        { ref: 'A1', kind: 'archive', title: '奠基通稿', detail: '香港城市大学（东莞）…' },
+      ],
+      model: 'deepseek-chat',
+    };
+    const a = answerFromChat(data);
+    expect(a.tool).toBe('chat');
+    expect(a.generated).toBe(true);
+    expect(a.model).toBe('deepseek-chat');
+    expect(a.summary).toBe(data.answer);
+    expect(a.items).toHaveLength(2);
+    expect(a.items[0]!.title).toContain('S1');
+    expect(a.items[1]!.meta).toBe('档案片段');
+  });
+
   it('问规范：按关键词筛选，逐条给出处', () => {
     const a = answerFromRules('标点', rules);
     expect(a.summary).toContain('命中 1 条');
