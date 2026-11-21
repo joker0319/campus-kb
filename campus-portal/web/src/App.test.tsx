@@ -53,6 +53,7 @@ describe('校稿台（接真实 /api/review）', () => {
   });
   afterEach(() => {
     vi.unstubAllGlobals();
+    vi.restoreAllMocks();
     window.location.hash = '';
   });
 
@@ -168,5 +169,63 @@ describe('校稿台（接真实 /api/review）', () => {
     const marked = screen.getByText('港城大（东莞）');
     expect(marked.getAttribute('role')).toBe('button');
     expect(marked.getAttribute('title')).toContain('点击查看依据');
+  });
+
+  it('上传 docx：提取正文按命中标红，报告可下载为 Markdown', async () => {
+    const fileText = '【媒体传讯处】测试通知\n各位同事：\n港城大（东莞）校长出席活动。';
+    const fileBody = {
+      filename: '活动通知.docx',
+      text: fileText,
+      findings: [reviewFixture.findings[3]!],
+      counts: { total: 1, error: 1, warn: 0, info: 0 },
+      ruleCount: 19,
+      report: '# 稿件校验报告\n- 文件：`活动通知.docx`\n',
+    };
+    const fetchMock = vi.fn((url: string) =>
+      Promise.resolve({
+        ok: true,
+        status: 200,
+        json: () => Promise.resolve(url.includes('review-file') ? fileBody : reviewFixture),
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    render(<App />);
+    await ready();
+
+    const file = new File(['docx'], '活动通知.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    const input = screen.getByLabelText<HTMLInputElement>('上传 docx 文件');
+    fireEvent.change(input, { target: { files: [file] } });
+
+    await waitFor(() => expect(list()).toHaveLength(1));
+    expect(screen.getByText('活动通知.docx')).toBeTruthy();
+    expect(fetchMock.mock.calls.some(([url]) => url.includes('/api/review-file'))).toBe(true);
+
+    const marked = screen.getByText('港城大（东莞）');
+    expect(marked.getAttribute('role')).toBe('button');
+
+    const createObjectURL = vi.fn(() => 'blob:mock');
+    const revokeObjectURL = vi.fn();
+    vi.stubGlobal(
+      'URL',
+      class extends URL {
+        static createObjectURL = createObjectURL;
+        static revokeObjectURL = revokeObjectURL;
+      },
+    );
+    const anchors: HTMLAnchorElement[] = [];
+    vi.spyOn(HTMLAnchorElement.prototype, 'click').mockImplementation(function (
+      this: HTMLAnchorElement,
+    ) {
+      anchors.push(this);
+    });
+
+    fireEvent.click(screen.getByRole('button', { name: '导出批注' }));
+    expect(createObjectURL).toHaveBeenCalledTimes(1);
+    expect(anchors).toHaveLength(1);
+    expect(anchors[0]!.download).toBe('活动通知.md');
+    expect(revokeObjectURL).toHaveBeenCalledWith('blob:mock');
   });
 });

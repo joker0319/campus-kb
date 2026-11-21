@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { postReview, toIssue, toSeverity } from './api';
+import { postReview, reviewFile, toIssue, toSeverity } from './api';
 import fixture from '../test/fixtures/review.json';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -40,5 +40,44 @@ describe('API 映射层', () => {
   it('非 2xx 直接抛错，不返回假数据', async () => {
     vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 500 }));
     await expect(postReview('测试正文')).rejects.toThrow('校验接口返回 500');
+  });
+
+  it('reviewFile 用 FormData 上传 docx，映射提取正文、命中与 Markdown 报告', async () => {
+    const body = {
+      filename: '活动通知.docx',
+      text: '标题\n正文\n港城大（东莞）出席。',
+      findings: fixture.findings,
+      counts: fixture.counts,
+      ruleCount: 19,
+      report: '# 稿件校验报告\n- 文件：`活动通知.docx`\n',
+    };
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve({
+        ok: true,
+        json: () => Promise.resolve(body),
+      }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const file = new File(['docx'], '活动通知.docx', {
+      type: 'application/vnd.openxmlformats-officedocument.wordprocessingml.document',
+    });
+    const result = await reviewFile(file);
+
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/review-file');
+    expect(init).toMatchObject({ method: 'POST' });
+    expect((init?.body as FormData).get('file')).toBe(file);
+    expect(result.filename).toBe(body.filename);
+    expect(result.text).toBe(body.text);
+    expect(result.report).toContain('稿件校验报告');
+    expect(result.issues).toHaveLength(17);
+    expect(result.ruleCount).toBe(19);
+  });
+
+  it('reviewFile 非 2xx 抛错，提示文件校验接口', async () => {
+    vi.stubGlobal('fetch', vi.fn().mockResolvedValue({ ok: false, status: 400 }));
+    const file = new File(['bad'], 'x.docx');
+    await expect(reviewFile(file)).rejects.toThrow('文件校验接口返回 400');
   });
 });

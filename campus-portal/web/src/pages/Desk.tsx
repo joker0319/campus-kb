@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from 'react';
-import { DRAFT_TEXT, RULES } from '../data/content';
+import { RULES } from '../data/content';
 import { buildIssueMap } from '../lib/review';
 import { useReview } from '../hooks/useReview';
 import { useReviewRequest } from '../hooks/useReviewRequest';
@@ -18,7 +18,8 @@ const RULE_MAP = new Map(RULES.map((r) => [r.id, r]));
 
 /** B 类工作台页面：无渐变、无光斑，动效只有一次 420ms 分层落位 */
 export default function Desk() {
-  const { phase, content, draft, submit, retry } = useReviewRequest();
+  const { phase, sourceKind, displayName, draft, report, reportName, submit, submitFile, retry } =
+    useReviewRequest();
   const issues = phase.kind === 'ready' ? phase.result.issues : NO_ISSUES;
   const issueMap = useMemo(() => buildIssueMap(issues), [issues]);
   const { state, counts, visible, selected, dispatch, select, step } = useReview(issues);
@@ -31,6 +32,7 @@ export default function Desk() {
   const [pasteOpen, setPasteOpen] = useState(false);
   const [exportLabel, setExportLabel] = useState('导出批注');
   const exportTimer = useRef<number | null>(null);
+  const fileRef = useRef<HTMLInputElement>(null);
 
   // 一次性入场：动画跑完就摘掉标记，元素回落到默认可见样式
   useEffect(() => {
@@ -73,11 +75,27 @@ export default function Desk() {
     return () => window.removeEventListener('keydown', onKey);
   }, [goStep, select]);
 
+  /** 有 Markdown 报告（docx 上传路径）时真正下载，否则保留占位提示 */
   const onExport = () => {
-    setExportLabel(`已生成 · ${counts.total} 条批注`);
+    if (report) {
+      const blob = new Blob([report], { type: 'text/markdown;charset=utf-8' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = `${reportName.replace(/\.docx$/i, '') || '稿件'}.md`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setExportLabel(`已下载 · ${counts.total} 条批注`);
+    } else {
+      setExportLabel(`已生成 · ${counts.total} 条批注`);
+    }
     if (exportTimer.current !== null) window.clearTimeout(exportTimer.current);
     exportTimer.current = window.setTimeout(() => setExportLabel('导出批注'), 1600);
   };
+
+  const onPickFile = () => fileRef.current?.click();
 
   const onRerun = () => {
     dispatch({ type: 'reset' });
@@ -122,17 +140,36 @@ export default function Desk() {
 
   return (
     <div className={`${s.app} ${compact ? s.appCompact : ''}`}>
+      <input
+        ref={fileRef}
+        type="file"
+        className={s.fileInput}
+        accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+        aria-label="上传 docx 文件"
+        onChange={(e) => {
+          const file = e.target.files?.[0];
+          if (file) {
+            dispatch({ type: 'reset' });
+            setExportLabel('导出批注');
+            submitFile(file);
+          }
+          // 允许再次选同一份文件
+          e.target.value = '';
+        }}
+      />
+
       <AppBar
-        fileName={content === DRAFT_TEXT ? 'bad-draft.md' : '自定义稿件'}
+        fileName={displayName}
         onRerun={onRerun}
         onPaste={() => setPasteOpen(true)}
+        onUpload={onPickFile}
         onExport={onExport}
         exportLabel={exportLabel}
       />
 
       {phase.kind === 'loading' ? (
         <div className={s.notice} role="status">
-          正在调用校验接口…
+          {sourceKind === 'file' ? '正在提取 docx 正文并校验…' : '正在调用校验接口…'}
         </div>
       ) : null}
       {phase.kind === 'error' ? (

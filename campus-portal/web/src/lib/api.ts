@@ -66,6 +66,47 @@ export async function postReview(
   };
 }
 
+/** 后端 POST /api/review-file 的响应（见 campus-kb/api/schemas.py） */
+interface ApiReviewFileResponse {
+  filename: string;
+  text: string;
+  findings: ApiFinding[];
+  counts: ApiReviewResponse['counts'];
+  ruleCount: number;
+  report: string;
+}
+
+export interface ReviewFileResult {
+  filename: string;
+  /** 从 docx 提取出的正文，行号与后端命中保持一致 */
+  text: string;
+  issues: readonly Issue[];
+  rawCounts: ApiReviewResponse['counts'];
+  ruleCount: number;
+  /** 后端生成的 Markdown 报告，供前端下载 */
+  report: string;
+  durationMs: number;
+}
+
+/** 上传 docx：后端提取正文 + 校验 + 生成 Markdown 报告。失败时抛错，不用假数据兜底。 */
+export async function reviewFile(file: File, signal?: AbortSignal): Promise<ReviewFileResult> {
+  const started = performance.now();
+  const form = new FormData();
+  form.append('file', file);
+  const r = await fetch('/api/review-file', { method: 'POST', body: form, signal });
+  if (!r.ok) throw new Error(`文件校验接口返回 ${r.status}`);
+  const data = (await r.json()) as ApiReviewFileResponse;
+  return {
+    filename: data.filename,
+    text: data.text,
+    issues: data.findings.map(toIssue),
+    rawCounts: data.counts,
+    ruleCount: data.ruleCount,
+    report: data.report,
+    durationMs: Math.round(performance.now() - started),
+  };
+}
+
 /** GET /api/rules 的一条规则（见 campus-kb/api/main.py list_rules） */
 export interface ApiRule {
   id: string;

@@ -208,3 +208,51 @@ class TestSearch:
 
     def test_endpoint_requires_q(self, client: TestClient) -> None:
         assert client.get("/api/search").status_code == 422
+
+
+def _docx_bytes(text: str) -> bytes:
+    """在内存生成一个 docx，每行一个段落。"""
+    from io import BytesIO
+    from docx import Document
+
+    doc = Document()
+    for line in text.split("\n"):
+        doc.add_paragraph(line)
+    buf = BytesIO()
+    doc.save(buf)
+    return buf.getvalue()
+
+
+class TestReviewFile:
+    def test_upload_docx_returns_baseline_findings(self, client: TestClient) -> None:
+        text = Path("samples/bad-draft.md").read_text(encoding="utf-8")
+        r = client.post(
+            "/api/review-file",
+            files={"file": ("bad-draft.docx", _docx_bytes(text),
+                            "application/vnd.openxmlformats-officedocument.wordprocessingml.document")},
+        )
+        assert r.status_code == 200
+        data = r.json()
+        assert data["filename"] == "bad-draft.docx"
+        assert data["counts"]["total"] == 17
+        assert data["counts"]["error"] == 11
+        assert data["ruleCount"] == 19
+        assert "香港城市大学" in data["text"]
+
+    def test_report_contains_sources_and_findings(self, client: TestClient) -> None:
+        text = Path("samples/bad-draft.md").read_text(encoding="utf-8")
+        r = client.post("/api/review-file", files={"file": ("bad.docx", _docx_bytes(text))})
+        report = r.json()["report"]
+        assert "# 稿件校验报告" in report
+        assert "## 问题清单" in report
+        assert "## 覆盖的规范来源" in report
+        assert "PUNCT-001" in report
+
+    def test_rejects_non_docx(self, client: TestClient) -> None:
+        r = client.post("/api/review-file", files={"file": ("note.txt", b"hello")})
+        assert r.status_code == 400
+        assert ".docx" in r.json()["detail"]
+
+    def test_rejects_corrupt_docx(self, client: TestClient) -> None:
+        r = client.post("/api/review-file", files={"file": ("broken.docx", b"not a real docx")})
+        assert r.status_code == 400

@@ -79,6 +79,9 @@
   align-items: center;
   gap: 8px;
 }
+.fileInput {
+  display: none;
+}
 .btn {
   height: 28px;
   padding: 0 11px;

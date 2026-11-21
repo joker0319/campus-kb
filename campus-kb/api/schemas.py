@@ -59,3 +59,14 @@ class ReviewResponse(BaseModel):
     findings: list[Finding]
     counts: Counts
     ruleCount: int
+
+
+class ReviewFileResponse(BaseModel):
+    """docx 文件校验结果：提取文本 + 命中 + 可下载的 Markdown 报告。"""
+
+    filename: str
+    text: str
+    findings: list[Finding]
+    counts: Counts
+    ruleCount: int
+    report: str
