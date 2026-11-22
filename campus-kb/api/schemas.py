@@ -93,3 +93,25 @@ class ChatResponse(BaseModel):
     answer: str
     sources: list[ChatSource]
     model: str
+
+
+class AgentRequest(BaseModel):
+    message: str = Field(min_length=1, max_length=4000, description="用户本轮提问")
+    history: list[ChatMessage] = Field(default_factory=list, description="最近若干轮对话")
+
+
+class AgentStep(BaseModel):
+    """一次工具调用及其结构化结果，供前端展示 Agent 的执行轨迹。"""
+
+    tool: str
+    args: dict
+    result: dict
+    callId: str = ""
+
+
+class AgentResponse(BaseModel):
+    answer: str
+    steps: list[AgentStep]
+    model: str
+    usedTools: list[str]
+    truncated: bool = False

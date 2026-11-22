@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from 'vitest';
-import { postChat, postReview, reviewFile, toIssue, toSeverity } from './api';
+import { postAgent, postChat, postReview, reviewFile, toIssue, toSeverity } from './api';
 import fixture from '../test/fixtures/review.json';
 
 afterEach(() => vi.unstubAllGlobals());
@@ -115,5 +115,52 @@ describe('API 映射层', () => {
       }),
     );
     await expect(postChat('你好')).rejects.toThrow('未配置 DEEPSEEK_API_KEY');
+  });
+
+  it('postAgent 带提问与历史调 /api/agent，返回回答与工具轨迹', async () => {
+    const body = {
+      answer: '查到了。',
+      steps: [
+        {
+          tool: 'search_rules',
+          args: { keyword: '标点' },
+          result: { kind: 'rules', items: [{ id: 'PUNCT-001' }], total: 1 },
+          callId: 'call_1',
+        },
+      ],
+      model: 'deepseek-chat',
+      usedTools: ['search_rules'],
+      truncated: false,
+    };
+    const fetchMock = vi.fn((_url: string, _init?: RequestInit) =>
+      Promise.resolve({ ok: true, json: () => Promise.resolve(body) }),
+    );
+    vi.stubGlobal('fetch', fetchMock);
+
+    const result = await postAgent('标点规范？', [{ role: 'user', content: '你好' }]);
+    const [url, init] = fetchMock.mock.calls[0]!;
+    expect(url).toBe('/api/agent');
+    expect(init?.method).toBe('POST');
+    expect(JSON.parse((init?.body as string) ?? '{}')).toEqual({
+      message: '标点规范？',
+      history: [{ role: 'user', content: '你好' }],
+    });
+    expect(result.answer).toBe('查到了。');
+    expect(result.steps).toHaveLength(1);
+    expect(result.steps[0]!.tool).toBe('search_rules');
+    expect(result.usedTools).toEqual(['search_rules']);
+    expect(result.truncated).toBe(false);
+  });
+
+  it('postAgent 透传后端 detail', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn().mockResolvedValue({
+        ok: false,
+        status: 502,
+        json: () => Promise.resolve({ detail: 'DeepSeek Agent 调用失败' }),
+      }),
+    );
+    await expect(postAgent('你好')).rejects.toThrow('DeepSeek Agent 调用失败');
   });
 });

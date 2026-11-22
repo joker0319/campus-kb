@@ -145,6 +145,48 @@ export async function postChat(
   return (await r.json()) as ChatResult;
 }
 
+/** POST /api/agent 的工具轨迹与结果（见 campus-kb/api/schemas.py） */
+export interface AgentStep {
+  readonly tool: string;
+  readonly args: Record<string, string>;
+  readonly result: {
+    readonly kind: string;
+    readonly items?: readonly Record<string, unknown>[];
+    readonly total?: number;
+    readonly counts?: { total: number; error: number; warn: number; info: number };
+    readonly keyword?: string;
+    readonly query?: string;
+  };
+  readonly callId: string;
+}
+
+export interface AgentResult {
+  readonly answer: string;
+  readonly steps: readonly AgentStep[];
+  readonly model: string;
+  readonly usedTools: readonly string[];
+  readonly truncated: boolean;
+}
+
+/** Agent 对话：模型自选工具，工具在后端确定性执行；失败时透传后端 detail。 */
+export async function postAgent(
+  message: string,
+  history: readonly ChatTurn[] = [],
+  signal?: AbortSignal,
+): Promise<AgentResult> {
+  const r = await fetch('/api/agent', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ message, history }),
+    signal,
+  });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `Agent 接口返回 ${r.status}`);
+  }
+  return (await r.json()) as AgentResult;
+}
+
 /** GET /api/rules 的一条规则（见 campus-kb/api/main.py list_rules） */
 export interface ApiRule {
   id: string;

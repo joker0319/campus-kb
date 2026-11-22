@@ -1,59 +1,57 @@
 import { useEffect, useRef, useState } from 'react';
-import {
-  getRules,
-  postChat,
-  postReview,
-  searchArchive,
-  type ChatTurn,
-  type RulesResult,
-} from '../lib/api';
-import {
-  answerFromArchive,
-  answerFromChat,
-  answerFromReview,
-  answerFromRules,
-  TOOLS,
-  type Answer,
-  type ToolKind,
-} from '../lib/assistantTools';
+import { postAgent, type AgentResult, type ChatTurn } from '../lib/api';
 import s from '../styles/assistant.module.css';
 
 type Turn = {
   readonly id: number;
   readonly query: string;
-  readonly answer?: Answer;
+  readonly result?: AgentResult;
   readonly error?: string;
   readonly pending?: boolean;
 };
 
-const PLACEHOLDER: Record<ToolKind, string> = {
-  rules: '输入规范关键词，如「标点」「序数」「校名」',
-  search: '输入档案检索词，多个词用空格分隔',
-  review: '粘贴一段正文，检查写作规范',
-  chat: '就知识库自由提问，如「首次提到校名要注意什么？」',
+const TOOL_LABEL: Record<string, string> = {
+  search_rules: '查规范',
+  search_archive: '查档案',
+  review_draft: '校稿件',
 };
 
-/** 知识库的个人助手：三个确定性工具，逐条给出处，查不到直说。 */
+/** 从工具轨迹里挑出给用户看的依据条目（文件名/规则号/命中行）。 */
+function cleanAnswer(text: string): string {
+  return text
+    .replace(/\*\*(.+?)\*\*/g, '$1') // 去掉模型输出的粗体星号，纯文本展示
+    .replace(/^#{1,6}\s+/gm, ''); // 去掉 markdown 标题符号
+}
+
+function stepItems(step: AgentResult['steps'][number]): readonly string[] {
+  const items = step.result.items ?? [];
+  if (step.result.kind === 'rules') {
+    return items.slice(0, 4).map((x) => {
+      const r = x as { id?: string; desc?: string };
+      return r.id ? `[${r.id}] ${r.desc ?? ''}` : (r.desc ?? '—');
+    });
+  }
+  if (step.result.kind === 'archive') {
+    return items.slice(0, 4).map((x) => {
+      const r = x as { file?: string; line?: number; excerpt?: string };
+      return `${r.file ?? ''}${r.line ? ` · 第 ${r.line} 行` : ''}：${r.excerpt ?? ''}`;
+    });
+  }
+  if (step.result.kind === 'review') {
+    return items.slice(0, 4).map((x) => {
+      const r = x as { ruleId?: string; line?: number; message?: string };
+      return `[${r.ruleId ?? ''}] 第 ${r.line ?? ''} 行 · ${r.message ?? ''}`;
+    });
+  }
+  return [];
+}
+
+/** 知识库的 Agent 助手：一句话进去，模型自选工具，工具在后端确定性执行。 */
 export default function Assistant() {
-  const [tool, setTool] = useState<ToolKind>('rules');
   const [draft, setDraft] = useState('');
   const [turns, setTurns] = useState<readonly Turn[]>([]);
-  const [rules, setRules] = useState<RulesResult | null>(null);
-  const [rulesError, setRulesError] = useState('');
   const seq = useRef(0);
   const bottom = useRef<HTMLDivElement | null>(null);
-
-  // 规则集一次加载，供「问规范」在前端确定性筛选
-  useEffect(() => {
-    const controller = new AbortController();
-    getRules(controller.signal)
-      .then(setRules)
-      .catch((err: unknown) => {
-        if (controller.signal.aborted) return;
-        setRulesError(err instanceof Error ? err.message : '规则加载失败');
-      });
-    return () => controller.abort();
-  }, []);
 
   useEffect(() => {
     bottom.current?.scrollIntoView({ block: 'end' });
@@ -69,32 +67,19 @@ export default function Assistant() {
     setTurns((prev) => [...prev, { id, query, pending: true }]);
     setDraft('');
 
-    // 只把 AI 问答的轮次带进上下文，避免确定性工具结果干扰模型判断
-    const history: ChatTurn[] = turns
-      .flatMap((t) =>
-        t.answer?.tool === 'chat'
-          ? [
-              { role: 'user' as const, content: t.query },
-              { role: 'assistant' as const, content: t.answer.summary },
-            ]
-          : [],
-      )
-      .slice(-12);
+    // 把本轮之前的对话带进上下文；只取 user/assistant 文本，工具轨迹不入库
+    const history: ChatTurn[] = turns.flatMap((t) =>
+      t.result
+        ? [
+            { role: 'user' as const, content: t.query },
+            { role: 'assistant' as const, content: t.result.answer },
+          ]
+        : [],
+    );
 
     try {
-      if (tool === 'rules') {
-        if (rulesError || !rules) throw new Error(rulesError || '规则尚未加载完成');
-        patch(id, { answer: answerFromRules(query, rules), pending: false });
-      } else if (tool === 'search') {
-        const res = await searchArchive(query);
-        patch(id, { answer: answerFromArchive(query, res), pending: false });
-      } else if (tool === 'review') {
-        const res = await postReview(query);
-        patch(id, { answer: answerFromReview(res), pending: false });
-      } else {
-        const res = await postChat(query, history);
-        patch(id, { answer: answerFromChat(res), pending: false });
-      }
+      const result = await postAgent(query, history);
+      patch(id, { result, pending: false });
     } catch (err: unknown) {
       patch(id, {
         error: err instanceof Error ? err.message : '调用失败',
@@ -110,7 +95,7 @@ export default function Assistant() {
           ← 返回首页
         </a>
         <span className={s.barName}>知识库的个人助手</span>
-        <span className={s.barTag}>本地规则 + DeepSeek · 逐条给依据</span>
+        <span className={s.barTag}>Agent · 自动检索规则与档案</span>
       </header>
 
       <div className={s.body}>
@@ -131,29 +116,25 @@ export default function Assistant() {
               </div>
               <h1 className={s.title}>有什么可以帮你？</h1>
               <p className={s.sub}>
-                前三个工具基于 19 条可溯源规则和入库档案，逐条给出处；
+                直接提问即可。助手会自己判断去查规范、查档案还是校稿件，
                 <br />
-                AI 问答由 DeepSeek 基于检索片段作答，并标明生成来源。
+                并展示每一步用了什么工具、依据来自哪里。
               </p>
+              <div className={s.suggestList} role="group" aria-label="示例提问">
+                {['校名首次出现要注意什么？', '档案里记载了奠基仪式的哪些信息？'].map((q) => (
+                  <button
+                    type="button"
+                    key={q}
+                    className={s.suggest}
+                    onClick={() => {
+                      setDraft(q);
+                    }}
+                  >
+                    {q}
+                  </button>
+                ))}
+              </div>
             </section>
-          )}
-
-          {turns.length === 0 && (
-            <div className={s.capList} role="group" aria-label="选择工具">
-              {TOOLS.map((c) => (
-                <button
-                  type="button"
-                  key={c.kind}
-                  className={`${s.cap} ${c.kind === tool ? s.capActive : ''}`}
-                  aria-pressed={c.kind === tool}
-                  onClick={() => setTool(c.kind)}
-                >
-                  <div className={s.capName}>{c.name}</div>
-                  <p className={s.capDesc}>{c.desc}</p>
-                  <span className={s.capState}>{c.kind === tool ? '已选择' : '可选用'}</span>
-                </button>
-              ))}
-            </div>
           )}
 
           <div className={s.threadList} aria-live="polite">
@@ -162,39 +143,70 @@ export default function Assistant() {
                 <div className={s.userMsg}>{t.query}</div>
                 {t.pending ? (
                   <div className={s.botMsg}>
-                    {tool === 'chat' ? '正在检索知识库并思考…' : '正在查询…'}
+                    <span className={s.ansTool}>Agent</span>
+                    <p className={s.ansSummary}>正在判断该用哪个工具…</p>
                   </div>
                 ) : t.error ? (
                   <div className={s.botMsg}>
                     <p className={s.ansSummary}>查询失败：{t.error}</p>
                     <p className={s.ansEmpty}>请确认本地后端已启动（127.0.0.1:8000）。</p>
                   </div>
-                ) : t.answer ? (
+                ) : t.result ? (
                   <div className={s.botMsg}>
-                    <span className={s.ansTool}>
-                      {TOOLS.find((x) => x.kind === t.answer?.tool)?.name}
-                    </span>
-                    {t.answer.generated ? (
-                      <span className={s.ansAi}>AI 生成 · {t.answer.model}</span>
+                    <span className={s.ansTool}>Agent</span>
+                    <span className={s.ansAi}>{t.result.model}</span>
+                    {t.result.truncated ? (
+                      <p className={s.ansTruncated}>本轮工具调用达到上限，结果可能不完整。</p>
                     ) : null}
-                    <p className={`${s.ansSummary} ${t.answer.generated ? s.ansAiText : ''}`}>
-                      {t.answer.summary}
+                    <p className={`${s.ansSummary} ${s.ansAiText}`}>
+                      {cleanAnswer(t.result.answer)}
                     </p>
-                    {t.answer.items.length > 0 ? (
-                      <div className={s.ansSrcHead}>本轮依据</div>
-                    ) : null}
-                    {t.answer.items.map((item, i) => (
-                      <div className={s.ansItem} key={`${item.meta}-${i}`}>
-                        <div className={s.ansTitle}>{item.title}</div>
-                        <div className={s.ansMeta}>{item.meta}</div>
-                        {item.detail && <div className={s.ansDetail}>{item.detail}</div>}
-                      </div>
-                    ))}
-                    {t.answer.generated ? (
-                      <p className={s.ansAiNote}>
-                        由 DeepSeek 生成，仅供参考；稿件是否合规请以「校稿件」的确定性结果为准。
-                      </p>
-                    ) : null}
+
+                    {t.result.steps.length > 0 ? (
+                      <>
+                        <div className={s.ansSrcHead}>执行轨迹</div>
+                        <div className={s.stepList}>
+                          {t.result.steps.map((step, i) => {
+                            const items = stepItems(step);
+                            return (
+                              <div className={s.step} key={`${step.callId}-${i}`}>
+                                <div className={s.stepHead}>
+                                  <span className={s.stepIdx}>{i + 1}</span>
+                                  <span className={s.stepTool}>
+                                    {TOOL_LABEL[step.tool] ?? step.tool}
+                                  </span>
+                                  <span className={s.stepArgs}>
+                                    {Object.values(step.args).join(' · ')}
+                                  </span>
+                                </div>
+                                {items.length > 0 ? (
+                                  <div className={s.stepItems}>
+                                    {items.map((line, j) => (
+                                      <div className={s.stepItem} key={j}>
+                                        {line}
+                                      </div>
+                                    ))}
+                                  </div>
+                                ) : null}
+                                {step.result.kind === 'review' && step.result.counts ? (
+                                  <div className={s.stepCount}>
+                                    命中 {step.result.counts.total} 项 · 错误{' '}
+                                    {step.result.counts.error} / 警告 {step.result.counts.warn}
+                                  </div>
+                                ) : null}
+                              </div>
+                            );
+                          })}
+                        </div>
+                      </>
+                    ) : (
+                      <p className={s.ansNoTool}>本轮未调用工具，直接作答。</p>
+                    )}
+
+                    <p className={s.ansAiNote}>
+                      由 DeepSeek
+                      组织回答；工具结果来自本地知识库与规则引擎，稿件合规性以规则引擎输出为准。
+                    </p>
                   </div>
                 ) : null}
               </div>
@@ -205,19 +217,6 @@ export default function Assistant() {
       </div>
 
       <div className={s.composerWrap}>
-        <div className={s.toolBar} role="group" aria-label="切换工具">
-          {TOOLS.map((c) => (
-            <button
-              type="button"
-              key={c.kind}
-              className={`${s.toolChip} ${c.kind === tool ? s.toolChipActive : ''}`}
-              aria-pressed={c.kind === tool}
-              onClick={() => setTool(c.kind)}
-            >
-              {c.name}
-            </button>
-          ))}
-        </div>
         <div className={s.composer}>
           <input
             className={s.input}
@@ -226,7 +225,7 @@ export default function Assistant() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') void send();
             }}
-            placeholder={PLACEHOLDER[tool]}
+            placeholder="问规范、查档案、校稿件——直接说就行"
             aria-label="助手输入框"
           />
           <button
@@ -238,7 +237,7 @@ export default function Assistant() {
             发送
           </button>
         </div>
-        <p className={s.hint}>前三项为确定性工具 · AI 问答由 DeepSeek 基于检索片段生成，仅供参考</p>
+        <p className={s.hint}>Agent 自动选择工具 · 校验结论以规则引擎为准</p>
       </div>
     </div>
   );

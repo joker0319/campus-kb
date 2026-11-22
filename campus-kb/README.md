@@ -27,7 +27,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 36 个用例，含 bad 17 / good 0 基线断言
+uv run pytest                                             # 43 个用例，含 bad 17 / good 0 基线断言
 ```
 
 | 接口 | 说明 |
@@ -37,9 +37,10 @@ uv run pytest                                             # 36 个用例，含 b
 | `POST /api/review` | `{ content, mode? }` → `{ findings[], counts, ruleCount }`；`mode=submission`（默认）全量规则，`mode=archive` 跳过投稿格式规则；finding.key 为 `ruleId@line`，同规则同行多次命中追加 `-2/-3` |
 | `GET /api/search?q=` | 语料库全文检索：关键词（空格分隔 AND）→ `{ total, scanned, results[{file,line,excerpt,hits}] }` |
 | `POST /api/review-file` | 上传 `.docx` → `{ filename, text, findings[], counts, ruleCount, report }`；段落/表格文本提取后复用同一套规则，report 为 Markdown 报告 |
-| `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；先检索规则与档案片段拼上下文，再调 DeepSeek。未配置密钥 503，上游失败 502 |
+| `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
+| `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
 
-AI 问答配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat` 不可用，其他接口不受影响。
+AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat` 与 `/api/agent` 不可用，其他接口不受影响。
 
 severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为 `warn、info → warning`，`counts` 保留原始分档。决策见 `campus-portal/docs/adr-002-python-backend.md`。
 
@@ -51,7 +52,7 @@ severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
-├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py）
+├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + search.py）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文
 │   ├── naming.json         # 校名（首次全称、全角括号、英文空格）

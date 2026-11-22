@@ -22,10 +22,10 @@
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek），36 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用），43 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
-| 助手页 `#/assistant` | ✅ 可用 | 三项确定性工具（问规范 / 查档案 / 校稿件）逐条给出处、查不到直说；第四项「AI 问答」走 DeepSeek，基于后端检索的规则/档案片段作答并标注生成来源。已在本地配置密钥并真实调用验证 |
+| Agent 助手 `#/assistant` | ✅ 可用 | 单输入框的 Agent 对话：DeepSeek Function Calling 自选工具（查规范 / 查档案 / 校稿件），工具在后端确定性执行并回灌，前端展示回答 + 执行轨迹 + 依据。校验结论仍由规则引擎产出。已用真实密钥端到端验证 |
 | 前端部署（Vercel） | ✅ 静态站 | Vercel 导入 `campus-portal/web`，Root Directory 设为 `campus-portal/web`（见该目录 `vercel.json`）；仅前端，线上无 `/api` 后端 |
 | 数据库 / 投稿流程 | ⏳ 未开始 | 选型见 [ADR-001](campus-portal/docs/tech-selection.md) |
 | docx 解析 / 导出报告 | ✅ 可用 | 上传 `.docx` 提取段落与表格文本，按同一套规则校验并给出处；导出 Markdown 报告。不在原文件写真批注 |
@@ -92,12 +92,16 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - 墨点是「知识库的个人助手」的入口：SVG 精灵保留呼吸 / 眨眼 / 瞳孔跟随，点击进 `#/assistant`；
 - 首页文案只讲定位，不堆校验数字（「规范、档案与稿件检查，都从一个入口进去」）。
 
-**助手页 `#/assistant`**
+**Agent 助手 `#/assistant`**
 
-- 三项确定性工具已接本地接口：问规范（`/api/rules` 关键词筛选）、查档案（`/api/search`）、校稿件（`/api/review`）；
-- 对话式界面，每条回答带规则号 / 行号 / 出处 / 改法；查不到直说「未找到，不做臆测」。
-- 第四项「AI 问答」走 `/api/chat`：后端先从规则与档案检索相关片段拼成上下文，再交给 DeepSeek 生成回答；前端标注「AI 生成」、列出本轮引用片段并附免责声明。校验结论仍以确定性工具为准，AI 不替代规则引擎。
-- 密钥配置：复制 `campus-kb/.env.example` 为 `campus-kb/.env`，填入 `DEEPSEEK_API_KEY`；`.env` 已 gitignore。未配置时接口返回 503 并提示，前端明确显示原因。
+- 单输入框对话，用户不必选工具。DeepSeek Function Calling 自己判断调用哪一个：
+  - `search_rules` → 规则库检索（后端 `checker.load_rules()`）
+  - `search_archive` → 档案库全文检索（后端 `api/search.py`）
+  - `review_draft` → 规则引擎校验（后端 `checker.run()`，结论以此为准）
+- 工具在后端**确定性执行**，结果作为 tool 消息回灌模型；模型只做意图判断与语言组织，不产出校验结论。循环上限 4 步，防止不收敛。
+- 前端展示模型回答 + 执行轨迹（每步调用了什么、传了什么参数、返回哪些依据条目）；查不到直说没依据，不臆测。
+- 密钥配置：复制 `campus-kb/.env.example` 为 `campus-kb/.env`，填入 `DEEPSEEK_API_KEY`；`.env` 已 gitignore。未配置时 `/api/agent` 返回 503 并提示，上游失败返回 502。
+- 旧的单轮问答 `/api/chat` 保留兼容，前端已不再使用；通用 UI 设计提示词见根目录 `UI-DESIGN-PROMPT.md`。
 
 
 **校稿台 `#/desk`**
@@ -108,7 +112,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - 问题条目 key 为 `${ruleId}@${line}`，不用数组下标——筛选后下标会漂移；
 - 同一段命中多条规则时，只要有一条 `error` 就按错误样式标记（警告淹没在错误里反而是误导）。
 
-**设计语言**（`.workbuddy/skills/campus-design-language/`）
+**设计语言**（通用提示词见根目录 `UI-DESIGN-PROMPT.md`）
 
 - `tokens.css` 是颜色 / 字号 / 字距的唯一来源；
 - 动效三铁律：默认样式可见、动画由运行态 class 驱动、一律提供 `prefers-reduced-motion` 降级；
@@ -118,7 +122,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 76 个（Vitest + Testing Library），后端 36 个（pytest）；
+- 测试：前端 68 个（Vitest + Testing Library，Agent 模式重构后），后端 43 个（pytest）；
 - 运行时依赖只有 React 本体 + FastAPI（docx 解析用 `python-docx`，文件上传用 `python-multipart`，AI 问答用 `httpx` + `pydantic-settings`）。
 
 ## 7. 开发日志
@@ -134,6 +138,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - **11-21 助手接接口**：三项工具接本地 `/api/rules`、`/api/search`、`/api/review`，确定性路由、逐条给出处，不接大模型。Vercel 部署问题排查后按用户要求终止上线。
 - **11-21 docx 闭环**：后端 `POST /api/review-file` 用 `python-docx` 提取段落/表格文本并复用同一套规则，返回命中与 Markdown 报告；前端加上传入口与下载按钮。真实浏览器端到端验证：17 项命中（错误 11 / 警告 6）、19 处标红、报告下载文件名正确。
 - **11-21 接入 DeepSeek**：保留三个零幻觉工具，新增第四项「AI 问答」。后端 `api/deepseek.py` 用字符 2-gram + 关键词打分从规则与档案检索片段，拼 system prompt 后经 `httpx` 调 DeepSeek OpenAI 兼容接口；`POST /api/chat` 未配置密钥 503、上游失败 502。前端新增 `postChat`、`answerFromChat` 与生成标记，明确与确定性结论区分。用户填入密钥后完成真实模型端到端验证：回答正确引用 `[S1]`/`[S3]`/`[S4]`，返回 9 条来源；浏览器实测生成标记、来源列表与免责声明均正常，console 无报错。
+- **11-23 转 Agent + 明确主线**：按用户澄清，项目主线是 RAG 知识库 + Agent 助手，不是文稿校订。把助手从「四工具手动切换」重构为 Agent：后端 `api/agent.py` 用 DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行并回灌，循环上限 4 步；`POST /api/agent` 返回回答 + 工具轨迹。前端助手改为单输入框对话并展示执行轨迹与依据，删除旧的 `assistantTools.ts` 死代码。真实密钥端到端验证三个工具均能自动选中并正确作答。通用 UI 设计整理为根目录 `UI-DESIGN-PROMPT.md`（非 skill）。前端 68 项 / 后端 43 项测试全绿。
 
 踩过的坑（均已写进代码注释或测试）：
 
@@ -151,14 +156,16 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - 只做**文本规则**：不判断事实真伪，不校验图片（仍需人工）；
 - 中文分词靠正则，长句中的职务简称（如「段校长」）可能漏判，靠人名 + 窗口匹配兜底；
 - docx 支持正文提取与报告导出，但不在原 `.docx` 上写真批注（只输出 Markdown 报告）；扫描件 PDF 仍需人工/OCR；
-- AI 问答依赖本地 `campus-kb/.env` 中的 `DEEPSEEK_API_KEY`（已 gitignore）；模型回答不替代规则引擎的确定性校验，且受上下文检索质量限制；
+- Agent / AI 问答依赖本地 `campus-kb/.env` 中的 `DEEPSEEK_API_KEY`（已 gitignore）；模型只做意图判断与语言组织，回答不替代规则引擎的确定性校验，且受检索质量限制；
+- 档案检索目前是关键词 + 字符 2-gram 打分，**不是语义检索**：没有向量化 / 重排序，同义改写可能召回不到。这是 RAG 下一步要补的核心短板；
 - `layout.json` 只是排版参数，尚未接入文档生成。
 
-## 9. 下一步
+## 9. 下一步（重心：RAG 知识库 + Agent）
 
-1. 投稿流程与版本管理（模型要点见 ADR-001 第四节）；
-2. 带出处的规范问答、初稿生成；
-3. 如需在原 docx 上写真批注或处理扫描件，再单独立项。
+1. **RAG 检索升级**：档案按段落分块 + 向量化（embedding）+ 相似度检索，补上语义召回短板；保留文件名 / 行号元数据以维持出处可溯。
+2. **Agent 能力扩展**：增加更多只读工具（如规则版本对比、跨档案时间线），并引入对话记忆持久化。
+3. 投稿流程与版本管理（数据模型要点见 [ADR-001](campus-portal/docs/tech-selection.md) 第四节；投稿流程见第五节分期）；
+4. 如需在原 docx 上写真批注或处理扫描件，再单独立项。
 
 ## 10. 说明
 

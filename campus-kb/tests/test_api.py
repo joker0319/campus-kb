@@ -7,12 +7,14 @@
 """
 
 import asyncio
+import json
+from collections.abc import Callable
 from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
 
-from api import deepseek
+from api import agent, deepseek
 from api.main import app
 from api.search import load_corpus, search
 
@@ -350,3 +352,195 @@ class TestChat:
         assert data["answer"] == "首次出现请用全称。"
         assert data["sources"][0]["ref"] == "S1"
         assert data["model"] == "deepseek-chat"
+
+
+class TestAgent:
+    """Agent：模型自选工具 → 本地确定性执行 → 回灌 → 回答。用假 client 模拟多轮，不依赖网络。"""
+
+    def test_without_key_returns_503(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            deepseek, "get_settings", lambda: deepseek.Settings(deepseek_api_key="")
+        )
+        r = client.post("/api/agent", json={"message": "查一下标点规范"})
+        assert r.status_code == 503
+        assert "DEEPSEEK_API_KEY" in r.json()["detail"]
+
+    def test_empty_message_rejected(self, client: TestClient) -> None:
+        assert client.post("/api/agent", json={"message": ""}).status_code == 422
+
+    def test_direct_answer_without_tools(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """模型不需要工具时直接回答，steps 为空。"""
+        import checker
+
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        responses = [
+            {"choices": [{"message": {"role": "assistant", "content": "你好，我是知识库助手。"}}]}
+        ]
+        fake = _FakeAgentClient(responses)
+        rules, _ = checker.load_rules()
+        result = asyncio.run(agent.run_agent("你好", rules, settings=settings, client=fake))
+
+        assert result["answer"] == "你好，我是知识库助手。"
+        assert result["steps"] == []
+        assert result["usedTools"] == []
+        assert len(fake.calls) == 1
+        assert fake.calls[0]["json"]["tool_choice"] == "auto"
+        assert any(t["function"]["name"] == "search_rules" for t in fake.calls[0]["json"]["tools"])
+
+    def test_tool_call_search_rules_returns_structured_steps(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """模型调 search_rules → 本地检索 → 回灌 → 生成答案，轨迹可被前端展示。"""
+        import checker
+
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        responses = [
+            {
+                "choices": [{
+                    "message": {
+                        "role": "assistant", "content": "",
+                        "tool_calls": [{
+                            "id": "call_1", "type": "function",
+                            "function": {"name": "search_rules", "arguments": '{"keyword":"标点"}'},
+                        }],
+                    }
+                }]
+            },
+            {"choices": [{"message": {"role": "assistant", "content": "中文应用全角标点。"}}]},
+        ]
+        fake = _FakeAgentClient(responses)
+        rules, _ = checker.load_rules()
+        result = asyncio.run(agent.run_agent("标点有什么规范？", rules, settings=settings, client=fake))
+
+        assert result["answer"] == "中文应用全角标点。"
+        assert result["usedTools"] == ["search_rules"]
+        assert result["steps"][0]["tool"] == "search_rules"
+        assert result["steps"][0]["args"] == {"keyword": "标点"}
+        assert result["steps"][0]["result"]["kind"] == "rules"
+        assert result["steps"][0]["result"]["items"]  # 本地确实查到了规则
+        # 第二轮消息里应含 tool 回灌
+        second = fake.calls[1]["json"]["messages"]
+        assert any(m.get("role") == "tool" and m.get("tool_call_id") == "call_1" for m in second)
+
+    def test_review_tool_uses_rule_engine_result(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """校验结论来自规则引擎，不来自模型编造。"""
+        import checker
+
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        responses = [
+            {
+                "choices": [{
+                    "message": {
+                        "role": "assistant", "content": "",
+                        "tool_calls": [{
+                            "id": "call_r", "type": "function",
+                            "function": {
+                                "name": "review_draft",
+                                "arguments": json.dumps({"content": "港城大（东莞）在2027年QS排名位列第63位。"}),
+                            },
+                        }],
+                    }
+                }]
+            },
+            {"choices": [{"message": {"role": "assistant", "content": "发现规范问题，见下方结果。"}}]},
+        ]
+        fake = _FakeAgentClient(responses)
+        rules, _ = checker.load_rules()
+        result = asyncio.run(agent.run_agent("帮我检查这段稿件", rules, settings=settings, client=fake))
+
+        review = result["steps"][0]["result"]
+        assert review["kind"] == "review"
+        assert review["counts"]["total"] >= 1
+        assert all(item["ruleId"] for item in review["items"])
+        # 回灌给模型的文本含真实命中，而非模型自由发挥
+        tool_msg = next(
+            m for m in fake.calls[1]["json"]["messages"] if m.get("role") == "tool"
+        )
+        assert "规则引擎校验完成" in tool_msg["content"]
+
+    def test_step_limit_returns_truncated_not_hang(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        """模型一直调工具不收敛时，达到上限明确收尾，不无限循环。"""
+        import checker
+
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+
+        def always_tool(_req: dict) -> dict:
+            return {
+                "choices": [{
+                    "message": {
+                        "role": "assistant", "content": "",
+                        "tool_calls": [{
+                            "id": "call_x", "type": "function",
+                            "function": {"name": "search_archive", "arguments": '{"query":"奠基"}'},
+                        }],
+                    }
+                }]
+            }
+
+        fake = _FakeAgentClient(responder=always_tool)
+        rules, _ = checker.load_rules()
+        result = asyncio.run(agent.run_agent("一直查档案", rules, settings=settings, client=fake))
+
+        assert result["truncated"] is True
+        assert len(fake.calls) == agent.MAX_STEPS
+        assert "工具调用达到上限" in result["answer"]
+
+    def test_endpoint_contract(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        """POST /api/agent 返回 answer / steps / usedTools / model。"""
+        import checker
+
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        responses = [
+            {"choices": [{"message": {"role": "assistant", "content": "已查询。"}}]}
+        ]
+        fake = _FakeAgentClient(responses)
+        monkeypatch.setattr(deepseek, "get_settings", lambda: settings)
+        monkeypatch.setattr(agent.httpx, "AsyncClient", lambda **_kw: fake)
+        rules, _ = checker.load_rules()
+        monkeypatch.setattr("api.main.get_engine", lambda: (rules, []))
+
+        r = client.post("/api/agent", json={"message": "校训是什么？"})
+        assert r.status_code == 200
+        data = r.json()
+        assert data["answer"] == "已查询。"
+        assert data["steps"] == []
+        assert data["usedTools"] == []
+        assert data["model"] == "test-model"
+
+
+class _FakeResponse:
+    def __init__(self, payload: dict) -> None:
+        self._payload = payload
+
+    def raise_for_status(self) -> None:
+        return None
+
+    def json(self) -> dict:
+        return self._payload
+
+
+class _FakeAgentClient:
+    """按序返回预设响应，或用 responder 动态生成；记录每次请求的 json body。"""
+
+    def __init__(
+        self,
+        responses: list[dict] | None = None,
+        responder: "Callable[[dict], dict] | None" = None,
+    ) -> None:
+        self._responses = list(responses or [])
+        self._responder = responder
+        self.calls: list[dict] = []
+
+    async def __aenter__(self) -> "_FakeAgentClient":
+        return self
+
+    async def __aexit__(self, *_args: object) -> bool:
+        return False
+
+    async def aclose(self) -> None:
+        return None
+
+    async def post(self, url: str, **kwargs: object) -> _FakeResponse:
+        self.calls.append({"url": url, "json": kwargs["json"]})
+        if self._responder:
+            return _FakeResponse(self._responder(kwargs["json"]))
+        idx = len(self.calls) - 1
+        return _FakeResponse(self._responses[min(idx, len(self._responses) - 1)])

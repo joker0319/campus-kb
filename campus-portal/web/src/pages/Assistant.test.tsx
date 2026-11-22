@@ -10,23 +10,37 @@ const jsonResponse = (body: unknown): Promise<Response> =>
     json: () => Promise.resolve(body),
   } as Response);
 
-const RULES = {
-  total: 1,
-  rules: [
+const AGENT_ANSWER = {
+  answer: '根据档案，奠基仪式于 2021 年 4 月 22 日举行。',
+  steps: [
     {
-      id: 'PUNCT-001',
-      category: '标点',
-      severity: 'error',
-      type: 'halfwidth',
-      desc: '中文语境使用半角标点',
-      suggestion: '改用全角标点',
-      source: '常用表述规范手册｜四、标点',
-      file: '常用表述规范手册',
+      tool: 'search_archive',
+      args: { query: '奠基' },
+      result: {
+        kind: 'archive',
+        items: [{ file: '奠基通稿', line: 3, excerpt: '4月22日举行奠基仪式', hits: 1 }],
+        total: 1,
+        scanned: 26,
+      },
+      callId: 'call_1',
+    },
+    {
+      tool: 'search_rules',
+      args: { keyword: '校名' },
+      result: {
+        kind: 'rules',
+        items: [{ id: 'NAME-001', desc: '首次出现用全称' }],
+        total: 1,
+      },
+      callId: 'call_2',
     },
   ],
+  model: 'deepseek-chat',
+  usedTools: ['search_archive', 'search_rules'],
+  truncated: false,
 };
 
-describe('助手页', () => {
+describe('助手页 Agent 模式', () => {
   beforeEach(() => {
     window.location.hash = '#/assistant';
     vi.stubGlobal(
@@ -34,29 +48,7 @@ describe('助手页', () => {
       vi.fn((input: RequestInfo | URL) => {
         const url =
           typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        if (url.includes('/api/rules')) return jsonResponse(RULES);
-        if (url.includes('/api/search')) {
-          return jsonResponse({
-            query: '于吉红',
-            total: 1,
-            scanned: 26,
-            results: [{ file: '奠基通稿', line: 3, excerpt: '于吉红出席仪式', hits: 1 }],
-          });
-        }
-        if (url.includes('/api/review')) {
-          return jsonResponse({
-            findings: [],
-            counts: { total: 0, error: 0, warn: 0, info: 0 },
-            ruleCount: 19,
-          });
-        }
-        if (url.includes('/api/chat')) {
-          return jsonResponse({
-            answer: '根据 [S1]，首次出现请用全称。',
-            sources: [{ ref: 'S1', kind: 'rule', title: 'NAME-001', detail: '校名首次出现用全称' }],
-            model: 'deepseek-chat',
-          });
-        }
+        if (url.includes('/api/agent')) return jsonResponse(AGENT_ANSWER);
         throw new Error(`unexpected url ${url}`);
       }),
     );
@@ -67,100 +59,86 @@ describe('助手页', () => {
     vi.unstubAllGlobals();
   });
 
-  it('渲染助手界面并展示四项可用工具', async () => {
+  it('渲染单输入框，不再有手动工具切换', async () => {
     render(<App />);
     await waitFor(() => {
       expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy();
     });
     expect(screen.getByRole('link', { name: '← 返回首页' })).toBeTruthy();
-    expect(
-      screen.getAllByRole('button', { name: /问规范|查档案|校稿件|AI 问答/ }).length,
-    ).toBeGreaterThanOrEqual(4);
-    expect(screen.getByLabelText<HTMLInputElement>('助手输入框').disabled).toBe(false);
+    const input = screen.getByLabelText<HTMLInputElement>('助手输入框');
+    expect(input.disabled).toBe(false);
+    expect(screen.queryByRole('button', { name: '问规范' })).toBeNull();
+    expect(screen.queryByRole('button', { name: 'AI 问答' })).toBeNull();
   });
 
-  it('问规范：输入关键词后展示带出处的规则', async () => {
+  it('提问后展示 Agent 回答、工具轨迹与依据', async () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() =>
       expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
     );
 
-    await user.type(screen.getByLabelText('助手输入框'), '标点');
+    await user.type(screen.getByLabelText('助手输入框'), '奠基仪式是什么时候？');
     await user.click(screen.getByRole('button', { name: '发送' }));
 
     await waitFor(() => {
-      expect(screen.getByText(/命中 1 条规范/)).toBeTruthy();
+      expect(screen.getByText(/2021 年 4 月 22 日举行/)).toBeTruthy();
     });
-    expect(screen.getByText(/出处：常用表述规范手册/)).toBeTruthy();
-    expect(screen.getByText(/建议：改用全角标点/)).toBeTruthy();
-  });
-
-  it('查档案：切换工具后检索并展示文件名与行号', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await waitFor(() =>
-      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
-    );
-
-    // 底部工具条里选「查档案」
-    const chips = screen.getAllByRole('button', { name: '查档案' });
-    await user.click(chips[chips.length - 1]!);
-    await user.type(screen.getByLabelText('助手输入框'), '于吉红');
-    await user.click(screen.getByRole('button', { name: '发送' }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/在 26 份档案中命中/)).toBeTruthy();
-    });
+    expect(screen.getByText('执行轨迹')).toBeTruthy();
+    expect(screen.getByText('查档案')).toBeTruthy();
+    expect(screen.getByText('查规范')).toBeTruthy();
     expect(screen.getByText(/奠基通稿 · 第 3 行/)).toBeTruthy();
-  });
-
-  it('校稿件：无命中时明确说明，不伪装回答', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await waitFor(() =>
-      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
-    );
-
-    const chips = screen.getAllByRole('button', { name: '校稿件' });
-    await user.click(chips[chips.length - 1]!);
-    await user.type(screen.getByLabelText('助手输入框'), '这是一段合规正文');
-    await user.click(screen.getByRole('button', { name: '发送' }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/未发现问题/)).toBeTruthy();
-    });
-  });
-
-  it('AI 问答：展示 DeepSeek 回答、生成标记与所引片段', async () => {
-    const user = userEvent.setup();
-    render(<App />);
-    await waitFor(() =>
-      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
-    );
-
-    const chips = screen.getAllByRole('button', { name: 'AI 问答' });
-    await user.click(chips[chips.length - 1]!);
-    await user.type(screen.getByLabelText('助手输入框'), '校名怎么写？');
-    await user.click(screen.getByRole('button', { name: '发送' }));
-
-    await waitFor(() => {
-      expect(screen.getByText(/首次出现请用全称/)).toBeTruthy();
-    });
-    expect(screen.getByText(/AI 生成 · deepseek-chat/)).toBeTruthy();
-    expect(screen.getByText(/S1 · NAME-001/)).toBeTruthy();
-    expect(screen.getByText(/规范片段/)).toBeTruthy();
-    expect(screen.getByText(/稿件是否合规请以「校稿件」的确定性结果为准/)).toBeTruthy();
+    expect(screen.getByText(/\[NAME-001\]/)).toBeTruthy();
 
     const fetchMock = vi.mocked(fetch);
-    const chatCall = fetchMock.mock.calls.find(([input]) => {
+    const agentCall = fetchMock.mock.calls.find(([input]) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      return url.includes('/api/chat');
+      return url.includes('/api/agent');
     });
-    expect(chatCall).toBeTruthy();
-    expect(JSON.parse((chatCall![1] as RequestInit).body as string)).toEqual({
-      message: '校名怎么写？',
+    expect(agentCall).toBeTruthy();
+    expect(JSON.parse((agentCall![1] as RequestInit).body as string)).toEqual({
+      message: '奠基仪式是什么时候？',
       history: [],
+    });
+  });
+
+  it('示例提问点击后填入输入框', async () => {
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
+    );
+
+    const suggest = screen.getByRole('button', { name: '校名首次出现要注意什么？' });
+    await user.click(suggest);
+    expect(screen.getByLabelText<HTMLInputElement>('助手输入框').value).toBe(
+      '校名首次出现要注意什么？',
+    );
+  });
+
+  it('接口失败时显示错误，不伪造回答', async () => {
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(
+        () =>
+          Promise.resolve({
+            ok: false,
+            status: 503,
+            json: () => Promise.resolve({ detail: '未配置 DEEPSEEK_API_KEY' }),
+          }) as Promise<Response>,
+      ),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
+    );
+
+    await user.type(screen.getByLabelText('助手输入框'), '校名规范');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => {
+      expect(screen.getByText(/查询失败：未配置 DEEPSEEK_API_KEY/)).toBeTruthy();
     });
   });
 });

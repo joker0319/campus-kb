@@ -20,11 +20,14 @@ from fastapi.middleware.cors import CORSMiddleware
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import checker  # noqa: E402  # sys.path 调整必须在前
+from . import agent  # noqa: E402
 from . import deepseek  # noqa: E402
 from . import docx_io  # noqa: E402
 from . import search as corpus_search  # noqa: E402
 
 from .schemas import (  # noqa: E402
+    AgentRequest,
+    AgentResponse,
     ChatRequest,
     ChatResponse,
     Counts,
@@ -192,3 +195,23 @@ async def chat(req: ChatRequest, engine: EngineDep) -> ChatResponse:
     except deepseek.DeepSeekUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return ChatResponse(**result)
+
+
+@app.post("/api/agent")
+async def agent_chat(req: AgentRequest, engine: EngineDep) -> AgentResponse:
+    """Agent 助手：模型自选工具，工具在后端确定性执行，结果回灌后生成回答。
+
+    工具轨迹（steps）一并返回前端展示；校验类结论以规则引擎输出为准。
+    未配置密钥 503；上游失败 502。
+    """
+    try:
+        result = await agent.run_agent(
+            req.message,
+            engine[0],
+            [m.model_dump() for m in req.history],
+        )
+    except deepseek.DeepSeekNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except deepseek.DeepSeekUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return AgentResponse(**result)
