@@ -27,7 +27,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 43 个用例，含 bad 17 / good 0 基线断言
+uv run pytest                                             # 61 个用例，含 bad 17 / good 0 基线断言
 ```
 
 | 接口 | 说明 |
@@ -47,12 +47,62 @@ severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为
 真实语料校准（corpus/text/ 26 份）：PUNCT-001 对时间（22:00）、比值（1:1）、千分位（1,000）
 数字间半角标点豁免；archive 模式扫全部档案时只剩内容规则命中（38 处，全是真问题）。
 
+## 公众号文章入库（2026-11-23 起）
+
+自有公众号的历史推文是语料里最有价值的一块：口径、惯用表述、活动记录都在里面，
+且天然适合做 RAG 的资料源。`tools/fetch_wechat.py` 把文章转成和 `corpus/text/`
+同格式的纯文本，`search.py` 用 `glob("*.txt")` 扫目录，**入库即被检索，无需改代码**。
+
+```bash
+# 单篇
+python tools/fetch_wechat.py https://mp.weixin.qq.com/s/xxxx
+
+# 批量（一行一个链接）
+python tools/fetch_wechat.py --urls urls.txt
+
+# 图片型推文必须加 --ocr
+python tools/fetch_wechat.py --ocr https://mp.weixin.qq.com/s/xxxx
+```
+
+产出三样东西：
+
+| 产出 | 位置 | 说明 |
+| --- | --- | --- |
+| 正文 | `corpus/text/<标题>_<日期>_WX.txt` | 与现有语料同格式；`_WX` 后缀标记来源 |
+| 图片 | `corpus/images/<标题>/图N.jpg` | 公众号 CDN 有 referer 防盗链，直链外站显示不出来，必须落本地 |
+| 元数据 | `corpus/wechat-sources.json` | 标题、公众号、发布时间、原文链接、字数、是否 OCR，用于溯源与去重 |
+
+### 两类推文，处理方式不同
+
+1. **文字排版型**：正文在 HTML 里，直接提取。从 `#js_content` 取段落，
+   剔掉「点击蓝字关注」这类模板噪音，图片转 `[图N]` 占位。
+2. **长图型**（文字做在图片里，HTML 只有 `<img>`）：**必须加 `--ocr`**。
+   不加会被直接拒绝入库——否则语料里只多一个搜不到任何内容的空壳。
+
+OCR 用 macOS 自带的 Vision 框架（`tools/ocr.swift`），离线、中文质量好、不引三方依赖：
+
+```bash
+swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 gitignore
+```
+
+对切片长图走 `--stitch`：公众号长图常被切成几十片，文字恰好落在接缝处会被腰斩，
+逐张识别会出现「\态调整」这种缺字。按累积高度拼接后整组识别能大幅减少这类问题
+（分组边界处仍可能有个别缺字，语料用于检索，不影响召回）。
+
+### 已知边界
+
+- 只处理**自己运营的公众号**。他人文章只能人工参考，内容和视觉设计都不能整篇搬。
+- 检索仍是关键词 / 子串匹配，不是语义检索：换个说法（「挂牌那天」vs「奠基仪式」）
+  就召回不到。这是 README 结尾「下一步」要解决的核心短板。
+- OCR 有少量错字（形近字、接缝缺字），适合做检索语料，不适合直接引用出版。
+
 ## 目录
 
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
 ├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + search.py）
+├── tools/                  # 本地工具：公众号抓取（fetch_wechat.py）+ Vision OCR（ocr.swift）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文
 │   ├── naming.json         # 校名（首次全称、全角括号、英文空格）
@@ -69,8 +119,9 @@ campus-kb/
 ```
 
 `corpus/` 存放媒体传讯处的真实历史档案（新闻通稿、致辞讲稿、执行物料、对外报告等五类 32 份，
-清单见 `corpus/INDEX.md`）。因含真实人名与内部信息被 `.gitignore` 排除，仅作本地用途：
-拿真实稿件跑引擎测误报/漏报，以及未来检索增强的资料源。
+清单见 `corpus/INDEX.md`），以及用 `tools/fetch_wechat.py` 抓取的自有公众号推文。
+因含真实人名与内部信息被 `.gitignore` 排除，仅作本地用途：拿真实稿件跑引擎测误报/漏报，
+并作为 Agent 档案检索的资料源。
 
 ## 规则覆盖（19 条）
 

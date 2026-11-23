@@ -58,11 +58,15 @@ TOOLS: list[dict[str, Any]] = [
         "type": "function",
         "function": {
             "name": "search_archive",
-            "description": "在入库的历史档案中全文检索。当用户问档案里记载了什么、某活动/人物/事件的历史资料时调用。多个关键词用空格分隔表示 AND。",
+            "description": (
+                "在入库的历史档案中全文检索。当用户问档案里记载了什么、某活动/人物/事件的历史资料时调用。"
+                "多个关键词用空格分隔表示 AND（必须出现在同一行），所以词越多命中越少——"
+                "建议先用 1-2 个核心词，命中后再看上下文，不要堆砌同义词。"
+            ),
             "parameters": {
                 "type": "object",
                 "properties": {
-                    "query": {"type": "string", "description": "检索词，多个词空格分隔，如「奠基 于吉红」"},
+                    "query": {"type": "string", "description": "检索词，1-2 个核心词，如「奠基」「心理 热线」"},
                 },
                 "required": ["query"],
             },
@@ -127,6 +131,31 @@ def _exec_search_rules(args: dict[str, Any], rules: list[dict]) -> ToolResult:
     }
 
 
+CONTEXT_SPAN = 2      # 命中行前后各带几行原文
+CONTEXT_MAX_ROWS = 5  # 只给前几条加上下文，控制 token
+
+
+def _context_for(name: str, line_no: int) -> str:
+    """取命中行附近的原始段落。
+
+    关键词检索只命中含检索词的行，但关键信息往往分散在相邻行：问「在哪预约」，
+    命中「预约方式」那行，地点和时间却写在隔壁。只把单行交给模型，它会回答
+    「档案中没有记载」——不是没记载，是没给它看。
+    """
+    try:
+        docs = corpus_search.load_corpus(str(corpus_search.corpus_dir()))
+    except OSError:
+        return ""
+    doc = next((d for d in docs if d.name == name), None)
+    if doc is None:
+        return ""
+    lines = doc.text.split("\n")
+    lo = max(0, line_no - 1 - CONTEXT_SPAN)
+    hi = min(len(lines), line_no + CONTEXT_SPAN)
+    parts = [line.strip() for line in lines[lo:hi] if line.strip()]
+    return " / ".join(parts)
+
+
 def _exec_search_archive(args: dict[str, Any]) -> ToolResult:
     query = str(args.get("query", "")).strip()
     if not query:
@@ -136,6 +165,19 @@ def _exec_search_archive(args: dict[str, Any]) -> ToolResult:
         result = corpus_search.search(query, limit=8)
     except OSError:
         result = {"total": 0, "scanned": 0, "results": []}
+
+    # 多词 AND 极容易空手而归：模型习惯把「情绪 求助 心理」一起塞进来，
+    # 而三个词几乎不会同时出现在同一行。空结果时退化成单关键词重试，
+    # 否则模型会误判「档案里没记载」——其实只是查法太严。
+    retried_with = ""
+    if not result.get("results"):
+        terms = sorted({t for t in query.split() if len(t) >= 2}, key=len, reverse=True)
+        for term in terms[:3]:
+            alt = corpus_search.search(term, limit=8)
+            if alt.get("results"):
+                result = alt
+                retried_with = term
+                break
 
     rows = result.get("results", [])
     items = [
@@ -148,12 +190,27 @@ def _exec_search_archive(args: dict[str, Any]) -> ToolResult:
             "structured": {"kind": "archive", "items": [], "query": query, "scanned": result.get("scanned", 0)},
         }
 
-    lines = [f"- {r['file']} 第 {r['line']} 行：{r['excerpt']}" for r in rows]
+    lines: list[str] = []
+    for idx, r in enumerate(rows):
+        entry = f"- {r['file']} 第 {r['line']} 行：{r['excerpt']}"
+        if idx < CONTEXT_MAX_ROWS:
+            context = _context_for(r["file"], r["line"])
+            if context:
+                entry += f"\n  该处上下文：{context}"
+        lines.append(entry)
+
+    header = f"档案命中 {result.get('total', 0)} 处（扫描 {result.get('scanned', 0)} 份）"
+    if retried_with:
+        header = (
+            f"「{query}」要求多个词同行，命中太少，已改用「{retried_with}」检索。{header}"
+        )
+
     return {
-        "text": f"档案命中 {result.get('total', 0)} 处（扫描 {result.get('scanned', 0)} 份）：\n" + "\n".join(lines),
+        "text": header + "：\n" + "\n".join(lines),
         "structured": {
             "kind": "archive", "items": items, "query": query,
             "total": result.get("total", 0), "scanned": result.get("scanned", 0),
+            "retriedWith": retried_with,
         },
     }
 

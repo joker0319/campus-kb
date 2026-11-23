@@ -163,15 +163,13 @@ class TestPunctExemptions:
 
 @pytest.fixture()
 def corpus_root(tmp_path: Path) -> Path:
-    """注入临时语料目录，绕开 load_corpus 的 lru_cache。"""
-    load_corpus.cache_clear()
+    """注入临时语料目录。缓存 key 为「路径 + 版本戳」，不同临时目录互不干扰。"""
     (tmp_path / "a.txt").write_text(
         "第一行没有关键词\n于吉红院士出席了奠基仪式\n又是无关行，奠基仪式很隆重\n",
         encoding="utf-8",
     )
     (tmp_path / "b.txt").write_text("奠基仪式于四月举行\n", encoding="utf-8")
     yield tmp_path
-    load_corpus.cache_clear()
 
 
 class TestSearch:
@@ -197,6 +195,18 @@ class TestSearch:
 
     def test_empty_query(self, corpus_root: Path) -> None:
         assert search("   ", root=corpus_root)["total"] == 0
+
+    def test_语料变更后无需重启即可检索(self, tmp_path: Path) -> None:
+        """抓完新文章应当立刻能搜到：缓存 key 带文件版本戳，不能是纯路径缓存。"""
+        import time
+
+        target = tmp_path / "wx.txt"
+        target.write_text("初始内容\n", encoding="utf-8")
+        assert search("初始内容", root=tmp_path)["total"] == 1
+
+        time.sleep(0.01)  # 保证 mtime_ns 变化
+        target.write_text("初始内容\n新增的公众号段落\n", encoding="utf-8")
+        assert search("新增的公众号段落", root=tmp_path)["total"] == 1
 
     def test_endpoint(self, client: TestClient, corpus_root: Path) -> None:
         # 端点走默认语料目录，用 monkeypatch 指向临时目录

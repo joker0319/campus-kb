@@ -24,9 +24,24 @@ def corpus_dir() -> Path:
     return Path(override) if override else KB / "corpus" / "text"
 
 
-@lru_cache(maxsize=1)
+def _corpus_stamp(root: Path) -> int:
+    """语料目录版本戳：任一文件新增或改动都会变，用来让缓存失效。"""
+    try:
+        return max((p.stat().st_mtime_ns for p in root.glob("*.txt")), default=0)
+    except OSError:
+        return 0
+
+
 def load_corpus(root: str) -> tuple[Doc, ...]:
-    """root 参与缓存 key：测试时可注入临时目录。"""
+    """root 参与缓存 key：测试时可注入临时目录。
+
+    带上版本戳，新增或修改语料后无需重启进程即可检索到——抓完文章立刻可用。
+    """
+    return _load_corpus(root, _corpus_stamp(Path(root)))
+
+
+@lru_cache(maxsize=8)
+def _load_corpus(root: str, stamp: int) -> tuple[Doc, ...]:
     docs = []
     for p in sorted(Path(root).glob("*.txt")):
         text = p.read_text(encoding="utf-8", errors="replace")

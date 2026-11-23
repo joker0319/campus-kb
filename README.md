@@ -22,7 +22,8 @@
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用），43 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用），61 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 公众号语料入库 | ✅ 可用 | `campus-kb/tools/fetch_wechat.py` 抓自有公众号推文转 `corpus/text/*_WX.txt`，`_WX` 标记来源；文字型直接提取，长图型用 macOS Vision OCR（`tools/ocr.swift`，切片拼接识别）。入库即可被 `/api/search` 与 Agent 检索，无需重启 |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
 | Agent 助手 `#/assistant` | ✅ 可用 | 单输入框的 Agent 对话：DeepSeek Function Calling 自选工具（查规范 / 查档案 / 校稿件），工具在后端确定性执行并回灌，前端展示回答 + 执行轨迹 + 依据。校验结论仍由规则引擎产出。已用真实密钥端到端验证 |
@@ -122,7 +123,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 68 个（Vitest + Testing Library，Agent 模式重构后），后端 43 个（pytest）；
+- 测试：前端 68 个（Vitest + Testing Library，Agent 模式重构后），后端 61 个（pytest）；
 - 运行时依赖只有 React 本体 + FastAPI（docx 解析用 `python-docx`，文件上传用 `python-multipart`，AI 问答用 `httpx` + `pydantic-settings`）。
 
 ## 7. 开发日志
@@ -139,6 +140,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - **11-21 docx 闭环**：后端 `POST /api/review-file` 用 `python-docx` 提取段落/表格文本并复用同一套规则，返回命中与 Markdown 报告；前端加上传入口与下载按钮。真实浏览器端到端验证：17 项命中（错误 11 / 警告 6）、19 处标红、报告下载文件名正确。
 - **11-21 接入 DeepSeek**：保留三个零幻觉工具，新增第四项「AI 问答」。后端 `api/deepseek.py` 用字符 2-gram + 关键词打分从规则与档案检索片段，拼 system prompt 后经 `httpx` 调 DeepSeek OpenAI 兼容接口；`POST /api/chat` 未配置密钥 503、上游失败 502。前端新增 `postChat`、`answerFromChat` 与生成标记，明确与确定性结论区分。用户填入密钥后完成真实模型端到端验证：回答正确引用 `[S1]`/`[S3]`/`[S4]`，返回 9 条来源；浏览器实测生成标记、来源列表与免责声明均正常，console 无报错。
 - **11-23 转 Agent + 明确主线**：按用户澄清，项目主线是 RAG 知识库 + Agent 助手，不是文稿校订。把助手从「四工具手动切换」重构为 Agent：后端 `api/agent.py` 用 DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行并回灌，循环上限 4 步；`POST /api/agent` 返回回答 + 工具轨迹。前端助手改为单输入框对话并展示执行轨迹与依据，删除旧的 `assistantTools.ts` 死代码。真实密钥端到端验证三个工具均能自动选中并正确作答。通用 UI 设计整理为根目录 `UI-DESIGN-PROMPT.md`（非 skill）。前端 68 项 / 后端 43 项测试全绿。
+- **11-23 公众号语料入库**：按用户「把自有公众号往期推文当 RAG 语料」的诉求，新增 `campus-kb/tools/fetch_wechat.py`——从 `#js_content` 提取段落、剔除「点击蓝字关注」等模板噪音、图片转 `[图N]` 占位并落本地（公众号 CDN 有 referer 防盗链，直链外站必裂）、元数据记入 `corpus/wechat-sources.json`；输出格式对齐 `corpus/text/*.txt`，检索侧零改动。首篇实测即为长图型推文（29 张切片，HTML 只有 158 字），故新增 `tools/ocr.swift` 走 macOS Vision 做中文 OCR（零三方依赖、离线），并用 `--stitch` 按累积高度拼接后识别以缓解切片接缝缺字，该篇找回约 2000 字。顺带修掉三处 Agent 检索缺陷：命中行带 ±2 行上下文（否则模型看不到相邻的「地点/开放时间」，会误答「档案未记载」）、多词 AND 空结果降级单关键词重试（模型习惯堆同义词导致全空）、语料缓存加文件版本戳（抓完文章无需重启进程）。真实端到端：Agent 从该推文答出咨询地点「学生公寓4栋1楼·芦苇渡」、24 小时热线 400-098-2525、紧急 110/120。后端 61 项测试全绿。
 
 踩过的坑（均已写进代码注释或测试）：
 
@@ -158,14 +160,16 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - docx 支持正文提取与报告导出，但不在原 `.docx` 上写真批注（只输出 Markdown 报告）；扫描件 PDF 仍需人工/OCR；
 - Agent / AI 问答依赖本地 `campus-kb/.env` 中的 `DEEPSEEK_API_KEY`（已 gitignore）；模型只做意图判断与语言组织，回答不替代规则引擎的确定性校验，且受检索质量限制；
 - 档案检索目前是关键词 + 字符 2-gram 打分，**不是语义检索**：没有向量化 / 重排序，同义改写可能召回不到。这是 RAG 下一步要补的核心短板；
+- 公众号抓取只处理**自有账号**；长图型推文靠 Vision OCR 提取，存在少量形近字与切片接缝处的缺字，适合做检索语料，不适合直接引用出版；
 - `layout.json` 只是排版参数，尚未接入文档生成。
 
 ## 9. 下一步（重心：RAG 知识库 + Agent）
 
 1. **RAG 检索升级**：档案按段落分块 + 向量化（embedding）+ 相似度检索，补上语义召回短板；保留文件名 / 行号元数据以维持出处可溯。
-2. **Agent 能力扩展**：增加更多只读工具（如规则版本对比、跨档案时间线），并引入对话记忆持久化。
-3. 投稿流程与版本管理（数据模型要点见 [ADR-001](campus-portal/docs/tech-selection.md) 第四节；投稿流程见第五节分期）；
-4. 如需在原 docx 上写真批注或处理扫描件，再单独立项。
+2. **公众号历史语料持续入库**：批量抓取往期推文，补齐选题、口径与活动记录，让 Agent 的答案有更厚的依据；对 OCR 文本做抽样校对，重点看长图接缝处与形近字。
+3. **Agent 能力扩展**：增加更多只读工具（如规则版本对比、跨档案时间线），并引入对话记忆持久化。
+4. 投稿流程与版本管理（数据模型要点见 [ADR-001](campus-portal/docs/tech-selection.md) 第四节；投稿流程见第五节分期）；
+5. 如需在原 docx 上写真批注或处理扫描件，再单独立项。
 
 ## 10. 说明
 

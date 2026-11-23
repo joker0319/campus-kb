@@ -29,3 +29,6 @@ campus-kb/corpus/
 
 # pytest basetemp（沙箱下用项目内目录）
 .pytest-tmp/
+
+# OCR 编译产物（swiftc 生成，可随时重建）
+campus-kb/tools/bin/
