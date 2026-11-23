@@ -72,6 +72,32 @@ python tools/fetch_wechat.py --ocr https://mp.weixin.qq.com/s/xxxx
 | 图片 | `corpus/images/<标题>/图N.jpg` | 公众号 CDN 有 referer 防盗链，直链外站显示不出来，必须落本地 |
 | 元数据 | `corpus/wechat-sources.json` | 标题、公众号、发布时间、原文链接、字数、是否 OCR，用于溯源与去重 |
 
+### 全量抓取整个公众号
+
+公众号没有公开的文章列表 API，但后台「已发表」页面本身带登录态。`tools/collect_links.js`
+在页面里直接调同源接口翻页，登录态由浏览器自己携带——不需要把 cookie 交给任何外部程序，
+也不依赖会失效的第三方采集服务。
+
+1. 浏览器打开公众号后台「内容与互动 → 已发表」；
+2. F12 → Console（Chrome 首次需手动输入 `allow pasting` 回车解锁粘贴）；
+3. 粘贴 `tools/collect_links.js` 全文，回车；
+4. 脚本自动翻页，过滤已删文章、视频号与空链接，最后下载 `urls.txt`；
+5. 交给抓取脚本：
+
+```bash
+python tools/fetch_wechat.py --ocr --urls urls.txt --drop-images
+```
+
+脚本兼容新旧两套后台接口（`appmsgpublish` / `appmsg`），一个不通会自动换另一个；
+解析逻辑有独立测试：`node --test tools/collect_links.test.js`。
+
+全量抓取要注意的四件事：
+
+- **断点续跑**：`wechat-sources.json` 现在逐篇落盘，中断后重跑只补没抓的，不会从头再来；
+- **磁盘**：长图型每篇图片约 20MB，上百篇就是 2GB 以上，`--drop-images` 在 OCR 落盘后清图；
+- **限速**：默认每篇间隔 1.5 秒，几百篇建议分批跑，避免触发风控；
+- **先编译 OCR**（见下），否则长图型推文会被直接拒绝入库。
+
 ### 两类推文，处理方式不同
 
 1. **文字排版型**：正文在 HTML 里，直接提取。从 `#js_content` 取段落，
@@ -92,6 +118,8 @@ swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 g
 ### 已知边界
 
 - 只处理**自己运营的公众号**。他人文章只能人工参考，内容和视觉设计都不能整篇搬。
+- 后台列表接口是微信的非公开接口，**可能随版本改版**。脚本已在接口不返回预期结构时
+  明确报错而不是静默返回空列表；真改版了需要重新适配（`tools/collect_links.js` 里的 `parsePublished`）。
 - 检索仍是关键词 / 子串匹配，不是语义检索：换个说法（「挂牌那天」vs「奠基仪式」）
   就召回不到。这是 README 结尾「下一步」要解决的核心短板。
 - OCR 有少量错字（形近字、接缝缺字），适合做检索语料，不适合直接引用出版。
@@ -102,7 +130,7 @@ swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 g
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
 ├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + search.py）
-├── tools/                  # 本地工具：公众号抓取（fetch_wechat.py）+ Vision OCR（ocr.swift）
+├── tools/                  # 本地工具：文章抓取（fetch_wechat.py）+ 列表采集（collect_links.js）+ Vision OCR（ocr.swift）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文
 │   ├── naming.json         # 校名（首次全称、全角括号、英文空格）

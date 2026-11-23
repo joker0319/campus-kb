@@ -28,6 +28,7 @@ import argparse
 import html as htmllib
 import json
 import re
+import shutil
 import subprocess
 import sys
 import time
@@ -364,6 +365,7 @@ def fetch_one(
     with_ocr: bool,
     force: bool,
     known: list[dict[str, str]],
+    drop_images: bool = False,
 ) -> dict[str, str] | None:
     existing = next((a for a in known if a.get("url") == url), None)
     if existing and not force:
@@ -422,6 +424,11 @@ def fetch_one(
     origin = "OCR" if image_only else "HTML"
     print(f"  正文 {len(paragraphs)} 段 / {chars} 字（来源 {origin}）→ text/{filename}")
 
+    # 全量入库时图片只是中间产物：文字已经进了 txt，留着每篇要多占十几 MB。
+    if drop_images and folder.exists():
+        shutil.rmtree(folder, ignore_errors=True)
+        print(f"  已清理 images/{folder.name}/（文本已落盘）")
+
     return {
         "url": url,
         "title": title,
@@ -465,6 +472,10 @@ def main(argv: list[str] | None = None) -> int:
         help="对图片型推文用 Vision OCR 提取文字（需先编译 tools/bin/ocr）",
     )
     ap.add_argument("--force", action="store_true", help="覆盖已抓过的同链接")
+    ap.add_argument(
+        "--drop-images", action="store_true",
+        help="文本落盘后删除该篇图片目录（全量入库省磁盘；OCR 已在落盘前完成）",
+    )
     ap.add_argument("--interval", type=float, default=1.5, help="多篇之间的间隔秒数")
     args = ap.parse_args(argv)
 
@@ -486,12 +497,15 @@ def main(argv: list[str] | None = None) -> int:
                     with_ocr=args.ocr,
                     force=args.force,
                     known=known,
+                    drop_images=args.drop_images,
                 )
                 if entry:
                     added.append(entry)
                     # --force 重抓时替换旧记录，避免同一链接出现两条
                     known = [a for a in known if a.get("url") != entry["url"]]
                     known.append(entry)
+                    # 全量抓几百篇时中途中断很常见，逐篇落盘才能保证重跑只补没抓完的
+                    save_sources(known)
             except (httpx.HTTPError, RuntimeError, OSError) as exc:
                 print(f"  ✗ 失败：{exc}", file=sys.stderr)
                 failures.append((url, str(exc)))
@@ -499,7 +513,6 @@ def main(argv: list[str] | None = None) -> int:
                 time.sleep(args.interval)
 
     if added:
-        save_sources(known)
         print(f"\n入库 {len(added)} 篇，元数据见 {SOURCES.relative_to(KB_ROOT)}")
         print("可直接检索：GET /api/search?q=关键词")
     if failures:
