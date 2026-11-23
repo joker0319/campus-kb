@@ -9,6 +9,7 @@ from tools.fetch_wechat import (
     parse_meta,
     render,
     safe_filename,
+    truncate_tail,
 )
 
 PAGE = """<html><head>
@@ -143,3 +144,30 @@ class TestRender:
     def test_输出格式与现有语料一致(self) -> None:
         text = render("标题", ["第一段", "第二段"])
         assert text == "标题\n\n第一段\n第二段\n"
+
+
+class TestTruncateTail:
+    """长图末尾的「推荐阅读」卡片会把别的文章标题 OCR 进来，必须截掉。"""
+
+    def test_推荐阅读之后全部丢弃(self) -> None:
+        paras = ["正文第一段。", "正文第二段。", "推荐阅读", "另一篇文章的标题", "点击关注"]
+        assert truncate_tail(paras) == ["正文第一段。", "正文第二段。"]
+
+    def test_带装饰符号的标记也能识别(self) -> None:
+        paras = ["正文。", "· 往期回顾 ·", "旧文标题"]
+        assert truncate_tail(paras) == ["正文。"]
+
+    def test_英文关注引导(self) -> None:
+        paras = ["正文。", "Follow us", "二维码"]
+        assert truncate_tail(paras) == ["正文。"]
+
+    def test_正文包含推荐阅读四字但不独立成行时不截断(self) -> None:
+        paras = ["我们为师生推荐阅读书目，覆盖人文与科技。", "第二段。"]
+        assert truncate_tail(paras) == paras
+
+    def test_无标记时原样返回(self) -> None:
+        paras = ["第一段。", "第二段。"]
+        assert truncate_tail(paras) == paras
+
+    def test_空列表(self) -> None:
+        assert truncate_tail([]) == []

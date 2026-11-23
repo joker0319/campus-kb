@@ -276,6 +276,24 @@ FIELD_START = re.compile(
 # 单段上限：超过就强制断开，避免出现检索片段装不下的超长段。
 MAX_PARA_CHARS = 150
 
+# 长图末尾常贴「推荐阅读 / 往期回顾 / 点击关注」卡片。OCR 会把卡片里**别的文章标题**
+# 一并识进来，造成跨文档污染：在 A 文里搜到 B 文的标题，检索到的事实归属就错了。
+# 遇到这类结束标记一律截断，其后的内容全部丢弃。
+TAIL_MARKERS = re.compile(
+    r"(推荐阅读|往期推荐|往期回顾|相关阅读|延伸阅读|更多精彩|"
+    r"点击关注|关注我们|扫描二维码|长按识别二维码|follow\s*us)",
+    re.I,
+)
+
+
+def truncate_tail(paras: list[str]) -> list[str]:
+    """从第一个文末卡片标记处截断，丢掉其后的推荐位与关注引导。"""
+    for i, para in enumerate(paras):
+        s = para.strip().strip("【】[]（）()·•-—_~ 　")
+        if TAIL_MARKERS.fullmatch(s):
+            return paras[:i]
+    return paras
+
 
 def lines_to_paragraphs(lines: list[str]) -> list[str]:
     """把 OCR 的逐行输出还原成段落。
@@ -354,7 +372,7 @@ def ocr_images(folder: Path, expected: int) -> list[str]:
         line for line in proc.stdout.splitlines()
         if line.strip() and not line.startswith("###GROUP:")
     ]
-    return lines_to_paragraphs(lines)
+    return truncate_tail(lines_to_paragraphs(lines))
 
 
 def fetch_one(
