@@ -5,6 +5,8 @@
 
 from tools.fetch_wechat import (
     BodyParser,
+    collect_urls,
+    extract_links,
     lines_to_paragraphs,
     parse_meta,
     render,
@@ -171,3 +173,106 @@ class TestTruncateTail:
 
     def test_空列表(self) -> None:
         assert truncate_tail([]) == []
+
+
+class TestExtractLinks:
+    """从任意粘贴文本抽链接。拿不到后台登录态时，用户只能一篇篇复制，格式很脏。"""
+
+    def test_粘连无分隔的相邻链接都要抽出(self) -> None:
+        # 用户真实贴过的形态：两条链接首尾直接相连，中间没有任何分隔符。
+        # 曾因整体正则贪婪吞掉下一条的 "https" 而只抽到前两条。
+        text = (
+            "https://mp.weixin.qq.com/s/AAA111 https://mp.weixin.qq.com/s/BBB222"
+            "https://mp.weixin.qq.com/s/CCC333https://mp.weixin.qq.com/s/DDD444"
+        )
+        assert extract_links(text) == [
+            "https://mp.weixin.qq.com/s/AAA111",
+            "https://mp.weixin.qq.com/s/BBB222",
+            "https://mp.weixin.qq.com/s/CCC333",
+            "https://mp.weixin.qq.com/s/DDD444",
+        ]
+
+    def test_分享卡片只取链接丢掉标题(self) -> None:
+        text = (
+            "香港城市大学东莞\n"
+            "港城莞获1000万元捐赠设立未来智能中心\n"
+            "https://mp.weixin.qq.com/s/WSNtMlJFpM37fbgyUtRTpw"
+        )
+        assert extract_links(text) == ["https://mp.weixin.qq.com/s/WSNtMlJFpM37fbgyUtRTpw"]
+
+    def test_追踪参数被剥离以便和已入库记录对上(self) -> None:
+        text = "https://mp.weixin.qq.com/s/AAA111?scene=1&srcid=1124abc#rd"
+        assert extract_links(text) == ["https://mp.weixin.qq.com/s/AAA111"]
+
+    def test_长链保留完整查询参数(self) -> None:
+        # 长链的 __biz/mid/idx/sn 是定位文章的唯一凭据，不能像短链那样截断
+        text = "http://mp.weixin.qq.com/s?__biz=MzA5&mid=2650&idx=1&sn=abc123"
+        got = extract_links(text)
+        assert got == ["https://mp.weixin.qq.com/s?__biz=MzA5&mid=2650&idx=1&sn=abc123"]
+
+    def test_链接后紧跟中文时在中文处截断(self) -> None:
+        text = "https://mp.weixin.qq.com/s/AAA111这是标题文字"
+        assert extract_links(text) == ["https://mp.weixin.qq.com/s/AAA111"]
+
+    def test_全角括号包裹的链接(self) -> None:
+        text = "（https://mp.weixin.qq.com/s/AAA111）"
+        assert extract_links(text) == ["https://mp.weixin.qq.com/s/AAA111"]
+
+    def test_忽略视频号与外站链接(self) -> None:
+        text = "https://channels.weixin.qq.com/xxx https://www.cityu.edu.cn/news"
+        assert extract_links(text) == []
+
+    def test_空文本返回空列表(self) -> None:
+        assert extract_links("") == []
+        assert extract_links("这是一段没有任何链接的文字") == []
+
+
+class TestCollectUrls:
+    """链接来源汇总：命令行参数、清单文件、stdin、累积收件箱。"""
+
+    def _args(self, **kw: object) -> object:
+        import argparse
+
+        base: dict[str, object] = {"url": [], "urls": None, "paste": False, "inbox": None}
+        base.update(kw)
+        return argparse.Namespace(**base)
+
+    def test_同一篇文章的不同参数形态只抓一次(self) -> None:
+        args = self._args(
+            url=[
+                "https://mp.weixin.qq.com/s/AAA111?scene=1",
+                "https://mp.weixin.qq.com/s/AAA111#rd",
+            ]
+        )
+        assert collect_urls(args) == ["https://mp.weixin.qq.com/s/AAA111"]
+
+    def test_清单文件里混入标题和注释也能读(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        f = Path(str(tmp_path)) / "urls.txt"
+        f.write_text(
+            "# 第一批\n港城莞获1000万元捐赠\nhttps://mp.weixin.qq.com/s/AAA111\n",
+            encoding="utf-8",
+        )
+        args = self._args(urls=str(f))
+        assert collect_urls(args) == ["https://mp.weixin.qq.com/s/AAA111"]
+
+    def test_不给任何输入时回落到收件箱(self, tmp_path: object) -> None:
+        from pathlib import Path
+
+        from tools import fetch_wechat
+
+        inbox = Path(str(tmp_path)) / "inbox.txt"
+        inbox.write_text("https://mp.weixin.qq.com/s/AAA111\n", encoding="utf-8")
+        old = fetch_wechat.INBOX
+        fetch_wechat.INBOX = inbox
+        try:
+            assert collect_urls(self._args()) == ["https://mp.weixin.qq.com/s/AAA111"]
+        finally:
+            fetch_wechat.INBOX = old
+
+    def test_文本里没有链接时明确报错(self) -> None:
+        import pytest
+
+        with pytest.raises(SystemExit):
+            collect_urls(self._args(url=["这不是链接"]))

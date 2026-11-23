@@ -44,6 +44,15 @@ TEXT_DIR = CORPUS / "text"
 IMAGE_DIR = CORPUS / "images"
 SOURCES = CORPUS / "wechat-sources.json"
 OCR_BIN = Path(__file__).resolve().parent / "bin" / "ocr"
+# 累积收件箱：拿不到后台登录态时，只能一篇篇复制链接，攒在这里一起抓。
+INBOX = KB_ROOT / "inbox.txt"
+
+# 公众号文章链接：短链 /s/xxx 与长链 /s?__biz=xxx 两种形态。
+# 前缀与正文分开：若用一条长正则整体匹配，粘连时贪婪部分会吞掉下一条的
+# "https"，导致 finditer 跳过相邻链接（实测 4 条只抽到 2 条）。
+LINK_PREFIX = re.compile(r"https?://mp\.weixin\.qq\.com/s[/?]")
+LINK_BODY = re.compile(r"[^\s，。、；：！？（）【】《》\"'<>|]*")
+SHORT_LINK = re.compile(r"^https://mp\.weixin\.qq\.com/s/([A-Za-z0-9_\-]+)")
 
 # 图片型推文判定：正文文字少、图片多，说明文字被做进了图片里。
 # 这类推文不 OCR 就入库，等于往语料库里塞空壳——检索时一个字都命中不了。
@@ -460,21 +469,60 @@ def fetch_one(
     }
 
 
+def extract_links(text: str) -> list[str]:
+    """从任意粘贴文本里抽出公众号文章链接。
+
+    微信里复制出来的内容格式很杂：可能是「标题换行链接」，可能几条链接首尾
+    相连没有分隔符，也可能带 `?scene=1#rd` 之类的追踪参数。所以不做逐行假设，
+    全局扫描后统一成规范形态，让去重真正生效。
+    """
+    found: list[str] = []
+    for m in LINK_PREFIX.finditer(text):
+        url = m.group(0) + LINK_BODY.match(text, m.end()).group(0)
+        # 粘连：正文部分会把下一条的 "https" 一起吞进来，按第二次出现的 http 截断
+        glued = url.find("http", 5)
+        if glued > 0:
+            url = url[:glued]
+        if url.startswith("http://"):
+            url = "https://" + url[7:]
+        short = SHORT_LINK.match(url)
+        if short:
+            # 短链的查询串只是分享追踪参数，统一掉才能和已入库记录对上
+            url = "https://mp.weixin.qq.com/s/" + short.group(1)
+        else:
+            url = url.rstrip(",.;)]},。，、；）】》")
+        found.append(url)
+    return found
+
+
 def collect_urls(args: argparse.Namespace) -> list[str]:
-    urls = list(args.url or [])
+    chunks: list[str] = []
+    if args.url:
+        chunks.append(" ".join(args.url))
     if args.urls:
         path = Path(args.urls)
         if not path.exists():
             sys.exit(f"链接清单不存在：{path}")
-        for line in path.read_text(encoding="utf-8").splitlines():
-            line = line.strip()
-            if line and not line.startswith("#"):
-                urls.append(line)
+        chunks.append(path.read_text(encoding="utf-8"))
+    if args.paste:
+        chunks.append(sys.stdin.read())
+    if args.inbox:
+        path = Path(args.inbox)
+        if not path.exists():
+            sys.exit(f"收件箱不存在：{path}")
+        chunks.append(path.read_text(encoding="utf-8"))
+    if not chunks:
+        # 什么都没给时回落到默认收件箱，省掉每次敲路径
+        if not INBOX.exists():
+            sys.exit("没有可抓取的链接。用法见 --help")
+        chunks.append(INBOX.read_text(encoding="utf-8"))
+
+    urls = extract_links("\n".join(chunks))
     # 去重但保序
     seen: set[str] = set()
     unique = [u for u in urls if not (u in seen or seen.add(u))]
     if not unique:
-        sys.exit("没有可抓取的链接。用法见 --help")
+        sys.exit("没有可抓取的链接（文本里没找到 mp.weixin.qq.com/s 链接）")
     return unique
 
 
@@ -484,6 +532,14 @@ def main(argv: list[str] | None = None) -> int:
     )
     ap.add_argument("url", nargs="*", help="文章链接，可多个")
     ap.add_argument("--urls", help="链接清单文件，一行一个")
+    ap.add_argument(
+        "--paste", action="store_true",
+        help="从标准输入读任意粘贴文本，自动抽取其中的文章链接",
+    )
+    ap.add_argument(
+        "--inbox", nargs="?", const=str(INBOX), metavar="路径",
+        help=f"读累积收件箱（默认 {INBOX.name}）；完全不给输入时也会自动读它",
+    )
     ap.add_argument("--no-images", action="store_true", help="不下载图片")
     ap.add_argument(
         "--ocr", action="store_true",

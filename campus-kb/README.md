@@ -27,7 +27,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 61 个用例，含 bad 17 / good 0 基线断言
+uv run pytest                                             # 79 个用例，含 bad 17 / good 0 基线断言
 ```
 
 | 接口 | 说明 |
@@ -97,6 +97,25 @@ python tools/fetch_wechat.py --ocr --urls urls.txt --drop-images
 - **磁盘**：长图型每篇图片约 20MB，上百篇就是 2GB 以上，`--drop-images` 在 OCR 落盘后清图；
 - **限速**：默认每篇间隔 1.5 秒，几百篇建议分批跑，避免触发风控；
 - **先编译 OCR**（见下），否则长图型推文会被直接拒绝入库。
+
+### 拿不到后台登录态时：逐篇累积
+
+后台进不去就只能一篇篇复制链接。为此工具不要求整齐的清单格式，任意文本都能解析：
+从整段粘贴里扫出所有 `mp.weixin.qq.com/s` 链接，标题、分享卡片、粘连无分隔、
+带 `?scene=1#rd` 追踪参数的都能正确处理；短链会归一成规范形态，
+所以同一篇从不同入口复制多次也只抓一遍。
+
+```bash
+# 方式一：直接粘贴（Ctrl-D / Cmd-D 结束输入）
+python tools/fetch_wechat.py --paste --ocr --drop-images
+
+# 方式二：攒进收件箱，攒几条抓一次；不带任何参数时默认就读它
+python tools/fetch_wechat.py --ocr --drop-images
+```
+
+`inbox.txt` 已 gitignore，不用清理——已入库的链接会自动跳过，留在里面当记录。
+粘连漏抽是这里最容易踩的坑：整体正则贪婪匹配会吞掉下一条链接的 `https`，
+实测 4 条只抽到 2 条，所以改成了前缀与正文分开扫描，并由测试锁住。
 
 ### 两类推文，处理方式不同
 
