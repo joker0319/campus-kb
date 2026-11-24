@@ -62,7 +62,7 @@ describe('助手页 Agent 模式', () => {
   it('渲染单输入框，不再有手动工具切换', async () => {
     render(<App />);
     await waitFor(() => {
-      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy();
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy();
     });
     expect(screen.getByRole('link', { name: '← 返回首页' })).toBeTruthy();
     const input = screen.getByLabelText<HTMLInputElement>('助手输入框');
@@ -75,7 +75,7 @@ describe('助手页 Agent 模式', () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy(),
     );
 
     await user.type(screen.getByLabelText('助手输入框'), '奠基仪式是什么时候？');
@@ -106,13 +106,15 @@ describe('助手页 Agent 模式', () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy(),
     );
 
-    const suggest = screen.getByRole('button', { name: '校名首次出现要注意什么？' });
+    const suggest = screen.getByRole('button', {
+      name: '帮我写一段介绍学校最新科研进展的推文',
+    });
     await user.click(suggest);
     expect(screen.getByLabelText<HTMLInputElement>('助手输入框').value).toBe(
-      '校名首次出现要注意什么？',
+      '帮我写一段介绍学校最新科研进展的推文',
     );
   });
 
@@ -131,7 +133,7 @@ describe('助手页 Agent 模式', () => {
     const user = userEvent.setup();
     render(<App />);
     await waitFor(() =>
-      expect(screen.getByRole('heading', { name: '有什么可以帮你？' })).toBeTruthy(),
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy(),
     );
 
     await user.type(screen.getByLabelText('助手输入框'), '校名规范');

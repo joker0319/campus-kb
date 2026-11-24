@@ -1,6 +1,6 @@
-# 校稿台 · 前端
+# 内容助手 · 前端
 
-媒体传讯处通讯员工作包的前端（「校稿台」设计的 React + TS 实现）。
+「RAG 知识库 + Agent 内容助手 → 生成公众号文章」项目的前端（React + TS）：首页、写文章（主线）、内容助手（Agent 对话）、校稿台（校验功能之一）四个页面。
 
 ## 运行
 
@@ -8,7 +8,7 @@
 npm install
 npm run dev        # http://127.0.0.1:5173
 npm run build      # 类型检查 + 生产构建 → dist/
-npm test           # 68 个用例（含真实接口夹具测试）
+npm test           # 72 个用例（含写文章页与真实接口夹具测试）
 npm run lint       # ESLint（含类型感知规则）
 npm run format     # Prettier 格式化
 npm run check      # 类型 + lint + 格式 + 测试，提交前跑这个
@@ -26,14 +26,15 @@ npm run check      # 类型 + lint + 格式 + 测试，提交前跑这个
 
 ```
 src/
-  App.tsx               hash 路由：#/ 首页 · #/desk 校稿台 · #/assistant 助手
+  App.tsx               hash 路由：#/ 首页 · #/compose 写文章 · #/desk 校稿台 · #/assistant 助手
   pages/Landing.tsx     首页（导航 + 主体 + 底部，动效编排）
+  pages/Compose.tsx     写文章（选题输入 → 结构化草稿 → 出处/检查 → 复制/下载）
   pages/Desk.tsx        校稿台（克制模式）
   pages/Assistant.tsx   Agent 助手（单输入框，模型自选工具，展示执行轨迹）
   types.ts              领域模型（Issue 用 `${ruleId}@${line}` 作稳定 key）
   data/content.ts       送审稿件与规则出处（依据栏）；命中不再内置
   lib/review.ts         纯函数：筛选、计数、键盘导航、标记严重度
-  lib/api.ts            /api/review + /api/review-file + /api/agent：映射、收敛、Agent 对话
+  lib/api.ts            /api/review + /api/review-file + /api/agent + /api/compose：映射、收敛、Agent 对话、文章生成
   lib/segments.ts       按命中词切分正文（split + 捕获组，比 replace 安全）
   lib/buildDraft.ts     任意正文 + 后端精确 hit → 带 issueKeys 的 Draft（动态标红）
   lib/countUp.ts        数字滚动（进度钳制，防 rAF 负时间差）

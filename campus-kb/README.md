@@ -1,6 +1,8 @@
-# 校园投稿质量门（campus-kb）
+# campus-kb · 知识库与校验引擎（项目后端模块）
 
-把媒体传讯处的三份规范文档，从「存着的 Word/PDF」变成「机器能执行的门槛」。
+> 本目录是「RAG 知识库 + Agent 内容助手 → 生成公众号文章」项目的**后端模块**：语料、检索、规则引擎与 FastAPI 都在这里。稿件规范校验是项目的其中一项功能，规则引擎即为该功能的实现。
+
+把媒体传讯处的规范、档案与往期推文沉淀为可检索语料；同时把三份规范文档变成「机器能执行的门槛」。
 
 ## 已验证的结果
 
@@ -27,7 +29,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 79 个用例，含 bad 17 / good 0 基线断言
+uv run pytest                                             # 94 个用例，含 bad 17 / good 0 基线断言与文章生成
 ```
 
 | 接口 | 说明 |
@@ -39,8 +41,9 @@ uv run pytest                                             # 79 个用例，含 b
 | `POST /api/review-file` | 上传 `.docx` → `{ filename, text, findings[], counts, ruleCount, report }`；段落/表格文本提取后复用同一套规则，report 为 Markdown 报告 |
 | `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
 | `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
+| `POST /api/compose` | `{ topic }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
 
-AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat` 与 `/api/agent` 不可用，其他接口不受影响。
+AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat`、`/api/agent`、`/api/compose` 不可用，其他接口不受影响。
 
 severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为 `warn、info → warning`，`counts` 保留原始分档。决策见 `campus-portal/docs/adr-002-python-backend.md`。
 
@@ -148,7 +151,7 @@ swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 g
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
-├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + search.py）
+├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py + search.py）
 ├── tools/                  # 本地工具：文章抓取（fetch_wechat.py）+ 列表采集（collect_links.js）+ Vision OCR（ocr.swift）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文

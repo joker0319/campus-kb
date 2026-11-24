@@ -2,7 +2,7 @@ import { useEffect, useRef, useState } from 'react';
 import s from '../styles/pet.module.css';
 
 /**
- * 墨点：知识库个人助手的入口。
+ * 墨点：内容助手（Agent）的入口。
  * 点击整块（精灵 + 气泡）进入 #/assistant；保留呼吸 / 眨眼 / 瞳孔跟随的静止感动画。
  */
 export function PetMascot() {
@@ -36,7 +36,7 @@ export function PetMascot() {
   }, [still]);
 
   return (
-    <a className={s.entry} href="#/assistant" aria-label="进入知识库的个人助手">
+    <a className={s.entry} href="#/assistant" aria-label="进入内容助手">
       <span className={s.pet} ref={pet}>
         {/* viewBox 裁到图形本身：留白会让「放大」只放大透明区 */}
         <svg className={s.svg} viewBox="10 6 44 54" aria-hidden="true" focusable="false">
@@ -61,8 +61,8 @@ export function PetMascot() {
       </span>
 
       <span className={s.copy}>
-        <b className={s.title}>知识库的个人助手</b>
-        <span className={s.bubble}>问我规范、查档案、校稿件，点这里开始 →</span>
+        <b className={s.title}>内容助手</b>
+        <span className={s.bubble}>写公众号文章、查规范与档案，点这里开始 →</span>
       </span>
     </a>
   );

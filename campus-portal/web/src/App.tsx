@@ -2,12 +2,14 @@ import { useEffect, useState } from 'react';
 import Landing from './pages/Landing';
 import Desk from './pages/Desk';
 import Assistant from './pages/Assistant';
+import Compose from './pages/Compose';
 
-type Route = 'home' | 'desk' | 'assistant';
+type Route = 'home' | 'desk' | 'assistant' | 'compose';
 
 const parse = (): Route => {
   if (window.location.hash.startsWith('#/desk')) return 'desk';
   if (window.location.hash.startsWith('#/assistant')) return 'assistant';
+  if (window.location.hash.startsWith('#/compose')) return 'compose';
   return 'home';
 };
 
@@ -31,5 +33,6 @@ export default function App() {
 
   if (route === 'desk') return <Desk />;
   if (route === 'assistant') return <Assistant />;
+  if (route === 'compose') return <Compose />;
   return <Landing />;
 }

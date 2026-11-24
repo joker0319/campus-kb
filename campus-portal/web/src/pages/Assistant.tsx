@@ -46,7 +46,7 @@ function stepItems(step: AgentResult['steps'][number]): readonly string[] {
   return [];
 }
 
-/** 知识库的 Agent 助手：一句话进去，模型自选工具，工具在后端确定性执行。 */
+/** 内容助手（Agent）：一句话进去，模型检索知识库自选工具，产出有出处的回答，辅助写公众号文章。 */
 export default function Assistant() {
   const [draft, setDraft] = useState('');
   const [turns, setTurns] = useState<readonly Turn[]>([]);
@@ -94,8 +94,8 @@ export default function Assistant() {
         <a className={s.back} href="#/">
           ← 返回首页
         </a>
-        <span className={s.barName}>知识库的个人助手</span>
-        <span className={s.barTag}>Agent · 自动检索规则与档案</span>
+        <span className={s.barName}>内容助手</span>
+        <span className={s.barTag}>Agent · 检索知识库，辅助写公众号文章</span>
       </header>
 
       <div className={s.body}>
@@ -114,14 +114,14 @@ export default function Assistant() {
                   <circle fill="var(--ink)" cx="38.4" cy="37.6" r="2.35" />
                 </svg>
               </div>
-              <h1 className={s.title}>有什么可以帮你？</h1>
+              <h1 className={s.title}>今天写点什么？</h1>
               <p className={s.sub}>
-                直接提问即可。助手会自己判断去查规范、查档案还是校稿件，
+                直接提问即可。助手会从知识库里查规范、查往期推文，
                 <br />
-                并展示每一步用了什么工具、依据来自哪里。
+                帮你写出能用的公众号文章，并展示依据来自哪里。
               </p>
               <div className={s.suggestList} role="group" aria-label="示例提问">
-                {['校名首次出现要注意什么？', '档案里记载了奠基仪式的哪些信息？'].map((q) => (
+                {['帮我写一段介绍学校最新科研进展的推文', '档案里记载了奠基仪式的哪些信息？'].map((q) => (
                   <button
                     type="button"
                     key={q}
@@ -225,7 +225,7 @@ export default function Assistant() {
             onKeyDown={(e) => {
               if (e.key === 'Enter') void send();
             }}
-            placeholder="问规范、查档案、校稿件——直接说就行"
+            placeholder="说清楚要写什么，或查规范、查档案——直接说就行"
             aria-label="助手输入框"
           />
           <button
@@ -237,7 +237,7 @@ export default function Assistant() {
             发送
           </button>
         </div>
-        <p className={s.hint}>Agent 自动选择工具 · 校验结论以规则引擎为准</p>
+        <p className={s.hint}>Agent 自动检索知识库 · 回答给出处，不臆测</p>
       </div>
     </div>
   );

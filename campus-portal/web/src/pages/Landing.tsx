@@ -29,10 +29,11 @@ export default function Landing() {
       <header className={s.top}>
         <a className={`${s.brand} ${s.in}`} style={D('0s')} href="#/" aria-label="首页">
           <span className={s.brandDot} />
-          校园知识库 · 媒体传讯处
+          RAG 知识库 · 内容助手
         </a>
         <nav className={`${s.nav} ${s.in}`} style={D('.08s')} aria-label="主导航">
-          <a href="#/assistant">个人助手</a>
+          <a href="#/compose">写文章</a>
+          <a href="#/assistant">内容助手</a>
           <a href="#/desk">校稿台</a>
         </nav>
       </header>
@@ -42,15 +43,15 @@ export default function Landing() {
         <section className={s.hero}>
           <div className={s.heroCopy}>
             <p className={`${s.kicker} ${s.in}`} style={D('.06s')}>
-              媒体传讯处 · 内容工作台
+              RAG 知识库 · Agent 助手
             </p>
             <h1 className={`${s.title} ${s.in}`} style={D('.14s')}>
-              知识库的
+              写出能发的
               <br />
-              个人助手
+              公众号文章
             </h1>
             <p className={`${s.lede} ${s.in}`} style={D('.24s')}>
-              规范、档案与稿件检查，都从一个入口进去。
+              规范、档案与往期推文都在知识库里，问一句就能用。
               <br />
               回答给出处，查不到就直说不知道。
             </p>
@@ -60,11 +61,11 @@ export default function Landing() {
             </div>
 
             <div className={`${s.actions} ${s.in}`} style={D('.46s')}>
-              <a className={s.cta} href="#/assistant">
-                进入助手 <span className={s.ctaArrow}>→</span>
+              <a className={s.cta} href="#/compose">
+                开始写文章 <span className={s.ctaArrow}>→</span>
               </a>
-              <a className={s.ctaGhost} href="#/desk">
-                去校稿台
+              <a className={s.ctaGhost} href="#/assistant">
+                问问内容助手
               </a>
             </div>
           </div>
@@ -78,8 +79,8 @@ export default function Landing() {
 
       {/* 底部 */}
       <footer className={s.foot}>
-        <span>香港城市大学（东莞）· 媒体传讯处</span>
-        <span>规则引擎 campus-kb · 19 条可溯源校验规则</span>
+        <span>RAG 知识库 · Agent 助手 · 面向微信公众号内容</span>
+        <span>规范与往期推文均可溯源 · 校稿是其中一项能力</span>
       </footer>
     </div>
   );

@@ -115,3 +115,47 @@ class AgentResponse(BaseModel):
     model: str
     usedTools: list[str]
     truncated: bool = False
+
+
+class ComposeRequest(BaseModel):
+    topic: str = Field(min_length=2, max_length=400, description="文章选题或写作要求")
+
+
+class ComposeArticle(BaseModel):
+    title: str
+    lead: str
+    sections: list[dict]
+    imageSuggestions: list[dict]
+
+
+class ComposeSource(BaseModel):
+    ref: str
+    kind: str
+    text: str
+    file: str
+    line: int
+
+
+class ComposeCitationReport(BaseModel):
+    cited: list[ComposeSource]
+    uncitedParagraphs: int
+    invalidCites: list[str]
+    paragraphCount: int
+    grounded: bool
+
+
+class ComposeReview(BaseModel):
+    counts: dict
+    findings: list[dict]
+
+
+class ComposeResponse(BaseModel):
+    topic: str
+    article: ComposeArticle
+    markdown: str
+    sources: list[ComposeSource]
+    rules: list[dict]
+    meta: dict
+    citations: ComposeCitationReport
+    review: ComposeReview
+    model: str

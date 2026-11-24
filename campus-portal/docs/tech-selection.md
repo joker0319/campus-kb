@@ -30,7 +30,7 @@
 
 ```
 campus-kb/          规则引擎 + FastAPI API + pytest 基线
-campus-portal/web   React 前端（首页 + 校稿台）
+campus-portal/web   React 前端（首页 + 内容助手 + 校稿台）
 campus-portal/docs  ADR
 ```
 

@@ -3,11 +3,11 @@ import { describe, expect, it } from 'vitest';
 import { PetMascot } from './PetMascot';
 
 describe('墨点助手入口', () => {
-  it('是进入助手的链接，文案为知识库的个人助手', () => {
+  it('是进入内容助手的链接', () => {
     render(<PetMascot />);
-    const entry = screen.getByRole('link', { name: '进入知识库的个人助手' });
+    const entry = screen.getByRole('link', { name: '进入内容助手' });
     expect(entry.getAttribute('href')).toBe('#/assistant');
-    expect(screen.getByText('知识库的个人助手')).toBeTruthy();
+    expect(screen.getByText('内容助手')).toBeTruthy();
   });
 
   it('不再出现校验台词或问题数字', () => {

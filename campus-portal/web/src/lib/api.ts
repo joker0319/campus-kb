@@ -187,6 +187,79 @@ export async function postAgent(
   return (await r.json()) as AgentResult;
 }
 
+/** POST /api/compose 文章生成（见 campus-kb/api/compose.py / schemas.py） */
+export interface ComposeSource {
+  readonly ref: string;
+  readonly kind: string;
+  readonly text: string;
+  readonly file: string;
+  readonly line: number;
+}
+
+export interface ComposeParagraph {
+  readonly text: string;
+  readonly cites: readonly string[];
+}
+
+export interface ComposeSection {
+  readonly heading: string;
+  readonly paragraphs: readonly ComposeParagraph[];
+}
+
+export interface ComposeArticle {
+  readonly title: string;
+  readonly lead: string;
+  readonly sections: readonly ComposeSection[];
+  readonly imageSuggestions: readonly { readonly after: string; readonly description: string }[];
+}
+
+export interface ComposeResult {
+  readonly topic: string;
+  readonly article: ComposeArticle;
+  readonly markdown: string;
+  readonly sources: readonly ComposeSource[];
+  readonly rules: readonly Record<string, unknown>[];
+  readonly meta: { readonly terms: readonly string[]; readonly scanned: number };
+  readonly citations: {
+    readonly cited: readonly ComposeSource[];
+    readonly uncitedParagraphs: number;
+    readonly invalidCites: readonly string[];
+    readonly paragraphCount: number;
+    readonly grounded: boolean;
+  };
+  readonly review: {
+    readonly counts: {
+      readonly total: number;
+      readonly error: number;
+      readonly warn: number;
+      readonly info: number;
+    };
+    readonly findings: readonly {
+      readonly ruleId: string;
+      readonly line: number;
+      readonly severity: string;
+      readonly message: string;
+      readonly suggestion: string;
+    }[];
+  };
+  readonly model: string;
+}
+
+/** 文章生成：选题 → 检索知识库成稿 → 出处与规范校验；失败时透传后端 detail。 */
+export async function postCompose(topic: string, signal?: AbortSignal): Promise<ComposeResult> {
+  const r = await fetch('/api/compose', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({ topic }),
+    signal,
+  });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `文章生成接口返回 ${r.status}`);
+  }
+  return (await r.json()) as ComposeResult;
+}
+
 /** GET /api/rules 的一条规则（见 campus-kb/api/main.py list_rules） */
 export interface ApiRule {
   id: string;

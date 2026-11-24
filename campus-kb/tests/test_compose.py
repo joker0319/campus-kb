@@ -1,0 +1,196 @@
+"""文章生成测试：检索 → 成稿 → 出处/规范校验。用假 client，不依赖网络与密钥。"""
+
+import asyncio
+import json
+from pathlib import Path
+
+import pytest
+from fastapi.testclient import TestClient
+
+import checker
+from api import compose, deepseek
+from api.main import app
+
+from test_api import _FakeAgentClient
+
+KB = Path(__file__).resolve().parent.parent
+
+
+@pytest.fixture(scope="module")
+def client() -> TestClient:
+    return TestClient(app)
+
+
+def _article_payload() -> dict:
+    """模型返回的合规 JSON：所有段落都带真实素材编号 A1。"""
+    return {
+        "title": "港城莞科研新进展",
+        "lead": "一句话导语",
+        "sections": [
+            {
+                "heading": "科研",
+                "paragraphs": [
+                    {"text": "据档案记载，学校取得进展。", "cites": ["A1"]},
+                ],
+            }
+        ],
+        "imageSuggestions": [{"after": "科研", "description": "实验室照片"}],
+    }
+
+
+class TestGatherMaterial:
+    def test_returns_numbered_blocks(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """检索结果带 A# 编号、文件名与行号；规范带 R# 编号。"""
+        (tmp_path / "x_WX.txt").write_text("学校取得重要科研进展\n", encoding="utf-8")
+        monkeypatch.setenv("CAMPUS_CORPUS_DIR", str(tmp_path))
+        rules, _ = checker.load_rules()
+        blocks, rule_items, meta = compose.gather_material("科研进展", rules)
+
+        assert blocks
+        assert blocks[0]["ref"].startswith("A")
+        assert blocks[0]["file"].endswith("_WX.txt")
+        assert "line" in blocks[0] and "text" in blocks[0]
+        assert meta["scanned"] >= 1
+
+    def test_empty_corpus_returns_no_blocks(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        monkeypatch.setenv("CAMPUS_CORPUS_DIR", str(tmp_path))
+        rules, _ = checker.load_rules()
+        blocks, _, _ = compose.gather_material("不存在的话题", rules)
+        assert blocks == []
+
+
+class TestParseArticle:
+    def test_parses_valid_json(self) -> None:
+        article = compose.parse_article(json.dumps(_article_payload(), ensure_ascii=False))
+        assert article["title"] == "港城莞科研新进展"
+        assert article["sections"][0]["paragraphs"][0]["cites"] == ["A1"]
+        assert article["imageSuggestions"][0]["description"] == "实验室照片"
+
+    def test_strips_code_fence(self) -> None:
+        raw = "```json\n" + json.dumps(_article_payload(), ensure_ascii=False) + "\n```"
+        assert compose.parse_article(raw)["title"] == "港城莞科研新进展"
+
+    def test_invalid_json_degrades_to_empty(self) -> None:
+        article = compose.parse_article("not json")
+        assert article["title"] == ""
+        assert article["sections"] == []
+
+
+class TestCheckCitations:
+    def test_grounded_when_all_paragraphs_cited(self) -> None:
+        blocks = [{"ref": "A1", "file": "x.txt", "line": 1, "text": "", "kind": "archive"}]
+        article = compose.parse_article(json.dumps(_article_payload(), ensure_ascii=False))
+        report = compose.check_citations(article, blocks)
+        assert report["grounded"] is True
+        assert report["uncitedParagraphs"] == 0
+        assert [s["ref"] for s in report["cited"]] == ["A1"]
+
+    def test_uncited_paragraph_flagged(self) -> None:
+        blocks = [{"ref": "A1", "file": "x.txt", "line": 1, "text": "", "kind": "archive"}]
+        article = {
+            "sections": [{"heading": "", "paragraphs": [
+                {"text": "没有出处的段落", "cites": []},
+            ]}],
+        }
+        report = compose.check_citations(article, blocks)
+        assert report["grounded"] is False
+        assert report["uncitedParagraphs"] == 1
+
+    def test_invalid_cite_flagged(self) -> None:
+        blocks = [{"ref": "A1", "file": "x.txt", "line": 1, "text": "", "kind": "archive"}]
+        article = {
+            "sections": [{"heading": "", "paragraphs": [
+                {"text": "引用了不存在的编号", "cites": ["A99"]},
+            ]}],
+        }
+        report = compose.check_citations(article, blocks)
+        assert report["invalidCites"] == ["A99"]
+        assert report["grounded"] is False
+
+    def test_placeholder_paragraph_not_counted(self) -> None:
+        article = {
+            "sections": [{"heading": "", "paragraphs": [
+                {"text": "（素材不足，待补充）", "cites": []},
+            ]}],
+        }
+        report = compose.check_citations(article, [])
+        assert report["paragraphCount"] == 0
+
+
+class TestReviewArticle:
+    def test_review_skips_submission_format_rules(self) -> None:
+        """公众号文章不是投稿件：SUB-* 投稿格式规则不应出现在发前检查里。"""
+        rules, _ = checker.load_rules()
+        article = {
+            "title": "一篇公众号文章",
+            "lead": "导语",
+            "sections": [{"heading": "正文", "paragraphs": [
+                {"text": "Macau 与 Macao 的写法需要规范，括号用（全角）。", "cites": []},
+            ]}],
+        }
+        report = compose.review_article(article, rules)
+        assert all(not f["ruleId"].startswith("SUB") for f in report["findings"])
+
+
+class TestMarkdown:
+    def test_includes_title_sections_and_cites(self) -> None:
+        article = compose.parse_article(json.dumps(_article_payload(), ensure_ascii=False))
+        md = compose.article_to_markdown(article)
+        assert "# 港城莞科研新进展" in md
+        assert "## 科研" in md
+        assert "[A1]" in md
+        assert "配图建议" in md
+
+
+class TestComposeArticle:
+    def test_without_key_returns_503(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
+        monkeypatch.setattr(
+            deepseek, "get_settings", lambda: deepseek.Settings(deepseek_api_key="")
+        )
+        r = client.post("/api/compose", json={"topic": "写一篇科研进展推文"})
+        assert r.status_code == 503
+        assert "DEEPSEEK_API_KEY" in r.json()["detail"]
+
+    def test_short_topic_rejected(self, client: TestClient) -> None:
+        assert client.post("/api/compose", json={"topic": "x"}).status_code == 422
+
+    def test_full_pipeline_with_fake_client(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """端到端：检索真实语料 → 假模型返回文章 → 出处与规范校验。"""
+        (tmp_path / "news_WX.txt").write_text("港城莞取得重大科研突破\n", encoding="utf-8")
+        monkeypatch.setenv("CAMPUS_CORPUS_DIR", str(tmp_path))
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        payload = _article_payload()
+        fake = _FakeAgentClient([
+            {"choices": [{"message": {"role": "assistant", "content": json.dumps(payload, ensure_ascii=False)}}]}
+        ])
+        rules, _ = checker.load_rules()
+
+        result = asyncio.run(compose.compose_article("写一篇科研突破推文", rules, settings=settings, client=fake))
+
+        assert result["topic"] == "写一篇科研突破推文"
+        assert result["article"]["title"] == payload["title"]
+        assert result["citations"]["grounded"] is True
+        assert result["sources"]
+        assert "A1" in result["markdown"]
+        assert result["review"]["counts"]["total"] >= 0
+        assert result["model"] == "test-model"
+        # 请求用了 JSON 模式，且上下文带编号素材
+        sent = fake.calls[0]["json"]
+        assert sent["response_format"] == {"type": "json_object"}
+        assert "[A1]" in sent["messages"][1]["content"]
+
+    def test_upstream_failure_maps_to_unavailable(self, monkeypatch: pytest.MonkeyPatch) -> None:
+        import httpx
+
+        settings = deepseek.Settings(deepseek_api_key="sk-test")
+        rules, _ = checker.load_rules()
+
+        class BrokenClient:
+            async def __aenter__(self): return self
+            async def __aexit__(self, *_a): return False
+            async def aclose(self): return None
+            async def post(self, *_a, **_k):
+                raise httpx.ConnectError("boom")
+
+        with pytest.raises(deepseek.DeepSeekUnavailable):
+            asyncio.run(compose.compose_article("科研", rules, settings=settings, client=BrokenClient()))

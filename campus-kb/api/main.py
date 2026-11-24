@@ -1,4 +1,4 @@
-"""校园投稿质量门 API。
+"""内容助手 API（RAG 知识库 + Agent）。
 
 只做薄封装：规则加载与校验逻辑全部复用 checker.py，
 本文件不写任何校验规则。跨域放行 Vite 开发端口（5173）。
@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import checker  # noqa: E402  # sys.path 调整必须在前
 from . import agent  # noqa: E402
 from . import deepseek  # noqa: E402
+from .compose import compose_article  # noqa: E402
 from . import docx_io  # noqa: E402
 from . import search as corpus_search  # noqa: E402
 
@@ -30,6 +31,8 @@ from .schemas import (  # noqa: E402
     AgentResponse,
     ChatRequest,
     ChatResponse,
+    ComposeRequest,
+    ComposeResponse,
     Counts,
     Finding,
     ReviewFileResponse,
@@ -40,9 +43,9 @@ from .schemas import (  # noqa: E402
 )
 
 app = FastAPI(
-    title="campus-kb API",
-    description="投稿质量门：19 条可溯源写作规范校验规则",
-    version="0.1.0",
+    title="内容助手 API",
+    description="RAG 知识库 + Agent 助手 → 生成可溯源公众号文章；规范校验为其中一项功能",
+    version="0.2.0",
 )
 
 app.add_middleware(
@@ -215,3 +218,20 @@ async def agent_chat(req: AgentRequest, engine: EngineDep) -> AgentResponse:
     except deepseek.DeepSeekUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return AgentResponse(**result)
+
+
+@app.post("/api/compose")
+async def compose(req: ComposeRequest, engine: EngineDep) -> ComposeResponse:
+    """文章生成：检索知识库 → DeepSeek 成稿 → 后端校验出处与规范。
+
+    模型只用检索到的编号素材写稿；无出处的段落会被标记，不冒充有据。
+    成稿另经规则引擎做发前检查（校验是项目的一个功能）。
+    未配置密钥 503；上游失败 502。
+    """
+    try:
+        result = await compose_article(req.topic, engine[0])
+    except deepseek.DeepSeekNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except deepseek.DeepSeekUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return ComposeResponse(**result)
