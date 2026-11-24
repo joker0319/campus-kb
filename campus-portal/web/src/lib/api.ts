@@ -295,6 +295,90 @@ export async function postCompose(
   return (await r.json()) as ComposeResult;
 }
 
+export interface StreamHandlers {
+  /** 每次收到模型原文增量 */
+  onDelta?: (text: string) => void;
+  /** 后端定下的文体（首帧就给，用来提前显示"自动判断为…"） */
+  onMeta?: (style: ComposeStyle) => void;
+}
+
+type StreamEvent = {
+  type?: string;
+  text?: string;
+  style?: ComposeStyle;
+  result?: ComposeResult;
+  message?: string;
+};
+
+/**
+ * 流式成稿：以 SSE 边收边回调，结束时返回完整结果（结构同 postCompose）。
+ * 首帧前的静默是后端在检索素材，不是卡住。
+ */
+export async function streamCompose(
+  topic: string,
+  style: ComposeStyleId = 'auto',
+  handlers: StreamHandlers = {},
+  signal?: AbortSignal,
+): Promise<ComposeResult> {
+  const r = await fetch('/api/compose/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ topic, style }),
+    signal,
+  });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `文章生成接口返回 ${r.status}`);
+  }
+  if (!r.body) throw new Error('当前浏览器不支持流式读取');
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  // 闭包里赋值不会被 TS 的控制流分析看见，所以装在对象里
+  const box: { result: ComposeResult | null } = { result: null };
+  let buffer = '';
+
+  const handle = (frame: string) => {
+    const line = frame.split('\n').find((ln) => ln.startsWith('data:'));
+    if (!line) return;
+    let event: StreamEvent;
+    try {
+      event = JSON.parse(line.slice(5).trim()) as StreamEvent;
+    } catch {
+      return;
+    }
+    if (event.type === 'delta' && event.text) {
+      handlers.onDelta?.(event.text);
+    } else if (event.type === 'meta' && event.style) {
+      handlers.onMeta?.(event.style);
+    } else if (event.type === 'done' && event.result) {
+      box.result = event.result;
+    } else if (event.type === 'error') {
+      throw new Error(event.message || '生成失败，请重试');
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut = buffer.indexOf('\n\n');
+      while (cut >= 0) {
+        const frame = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        handle(frame);
+        cut = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!box.result) throw new Error('生成中断，没有收到完整稿件');
+  return box.result;
+}
+
 export interface RevisePayload {
   readonly topic: string;
   readonly instruction: string;

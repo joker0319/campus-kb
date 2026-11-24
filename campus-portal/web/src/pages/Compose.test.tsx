@@ -1,4 +1,4 @@
-import { render, screen, waitFor, within } from '@testing-library/react';
+import { act, render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Compose from './Compose';
@@ -116,6 +116,18 @@ function mockByUrl() {
         auto: !requested || requested === 'auto',
       },
     };
+    if (url.includes('/compose/stream')) {
+      const articleJson = JSON.stringify(payload.article);
+      const cut = Math.max(1, Math.floor(articleJson.length / 2));
+      const frames =
+        `data: ${JSON.stringify({ type: 'meta', style: payload.style })}\n\n` +
+        `data: ${JSON.stringify({ type: 'delta', text: articleJson.slice(0, cut) })}\n\n` +
+        `data: ${JSON.stringify({ type: 'delta', text: articleJson.slice(cut) })}\n\n` +
+        `data: ${JSON.stringify({ type: 'done', result: payload })}\n\n`;
+      return Promise.resolve(
+        new Response(frames, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+      );
+    }
     return Promise.resolve(jsonResponse(payload));
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -400,5 +412,86 @@ describe('写文章页 — 复制排版', () => {
     await user.click(screen.getByRole('button', { name: '复制排版' }));
 
     await waitFor(() => expect(screen.getByRole('button', { name: '复制排版' })).toBeTruthy());
+  });
+});
+
+describe('写文章页 — 流式成稿', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  /** 手动推帧的假后端：能卡在"写到一半"检查中间态。 */
+  function controlledStream() {
+    const encoder = new TextEncoder();
+    let push: (frame: string) => void = () => {};
+    let close: () => void = () => {};
+    const body = new ReadableStream<Uint8Array>({
+      start(controller) {
+        push = (frame) => controller.enqueue(encoder.encode(frame));
+        close = () => controller.close();
+      },
+    });
+    vi.stubGlobal(
+      'fetch',
+      vi.fn(() => Promise.resolve(new Response(body, { status: 200 }))),
+    );
+    return { push, close };
+  }
+
+  it('边写边显示：已写完的段落先出现，收完才给成品操作', async () => {
+    const { push, close } = controlledStream();
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+
+    await waitFor(() => expect(screen.getByText('正在成稿')).toBeTruthy());
+    expect(screen.getByText('正在检索素材、构思结构…')).toBeTruthy();
+
+    act(() => {
+      push(`data: ${JSON.stringify({ type: 'meta', style: RESULT.style })}\n\n`);
+      push(
+        `data: ${JSON.stringify({
+          type: 'delta',
+          text: '{"title":"半成品标题","lead":"导语一句话","sections":[{"heading":"科研","paragraphs":[{"text":"已经写完的一段。"}]}',
+        })}\n\n`,
+      );
+    });
+
+    await waitFor(() => expect(screen.getByText('半成品标题')).toBeTruthy());
+    expect(screen.getByText('已经写完的一段。')).toBeTruthy();
+    expect(screen.getByText('科研')).toBeTruthy();
+    // 还没收完，不应该出现成品态的操作
+    expect(screen.queryByRole('button', { name: '复制排版' })).toBeNull();
+
+    act(() => {
+      push(`data: ${JSON.stringify({ type: 'done', result: RESULT })}\n\n`);
+      close();
+    });
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '复制排版' })).toBeTruthy());
+    expect(screen.getByText('港城莞科研新进展')).toBeTruthy();
+  });
+
+  it('流里的 error 事件转成页面报错', async () => {
+    const { push, close } = controlledStream();
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+
+    await waitFor(() => expect(screen.getByText('正在成稿')).toBeTruthy());
+
+    act(() => {
+      push(`data: ${JSON.stringify({ type: 'error', message: '模型返回内容不完整，请重试' })}\n\n`);
+      close();
+    });
+
+    const alert = await screen.findByRole('alert');
+    expect(alert.textContent).toContain('模型返回内容不完整');
   });
 });

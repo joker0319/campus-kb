@@ -18,7 +18,7 @@ from __future__ import annotations
 
 import json
 import re
-from typing import Any
+from typing import Any, AsyncIterator
 
 import httpx
 
@@ -410,14 +410,70 @@ def figures_to_markdown(figs: list[dict]) -> str:
     return "\n".join(lines) + "\n"
 
 
-async def compose_article(
+async def _stream_model_raw(
+    cfg: deepseek.Settings,
+    system_prompt: str,
+    user_prompt: str,
+    client: httpx.AsyncClient | None,
+) -> AsyncIterator[str]:
+    """流式调用，按 DeepSeek 的 SSE 逐段吐原始文本（JSON 片段）。
+
+    保留 JSON 模式：结构化输出的可靠性比"好看的流"重要，前端另做增量解析。
+    """
+    url = f"{cfg.deepseek_base_url.rstrip('/')}/chat/completions"
+    owns_client = client is None
+    http = client or httpx.AsyncClient(timeout=180)
+    try:
+        async with http.stream(
+            "POST",
+            url,
+            headers={
+                "Authorization": f"Bearer {cfg.deepseek_api_key}",
+                "Content-Type": "application/json",
+            },
+            json={
+                "model": cfg.deepseek_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.3,
+                "stream": True,
+                "response_format": {"type": "json_object"},
+            },
+        ) as response:
+            response.raise_for_status()
+            async for line in response.aiter_lines():
+                if not line.startswith("data:"):
+                    continue
+                payload = line[5:].strip()
+                if not payload or payload == "[DONE]":
+                    continue
+                try:
+                    chunk = json.loads(payload)
+                except ValueError:
+                    # 心跳/注释行，跳过即可，不中断整篇
+                    continue
+                choices = chunk.get("choices") or []
+                if not choices:
+                    continue
+                text = (choices[0].get("delta") or {}).get("content")
+                if text:
+                    yield text
+    except httpx.HTTPError as exc:
+        raise deepseek.DeepSeekUnavailable(f"文章生成调用失败：{exc}") from exc
+    finally:
+        if owns_client:
+            await http.aclose()
+
+
+def _prepare(
     topic: str,
     rules: list[dict],
+    style: str,
     settings: deepseek.Settings | None = None,
-    client: httpx.AsyncClient | None = None,
-    style: str = "auto",
 ) -> dict:
-    """主流程：定文体 → 检索 → 成稿 → 校验出处与规范。返回可直接下发前端的结构。"""
+    """两条路径（一次性 / 流式）共用的准备：定文体、检索素材、拼两份提示。"""
     cfg = settings or deepseek.get_settings()
     if not cfg.configured:
         raise deepseek.DeepSeekNotConfigured("未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥")
@@ -426,12 +482,26 @@ async def compose_article(
     blocks, rule_items, meta = gather_material(topic, rules)
     meta["style"] = spec["id"]
     context = build_context(blocks, rule_items)
-    user_prompt = f"请围绕选题写公众号文章草稿。\n选题：{topic}\n\n{context}"
-    system_prompt = f"{COMPOSE_SYSTEM_PROMPT}\n\n{_title_hints(rules)}{styles.style_block(spec)}"
+    return {
+        "cfg": cfg,
+        "spec": spec,
+        "blocks": blocks,
+        "rule_items": rule_items,
+        "meta": meta,
+        "user_prompt": f"请围绕选题写公众号文章草稿。\n选题：{topic}\n\n{context}",
+        "system_prompt": f"{COMPOSE_SYSTEM_PROMPT}\n\n{_title_hints(rules)}{styles.style_block(spec)}",
+    }
 
-    article = await _call_model_json(cfg, system_prompt, user_prompt, client)
 
-    cites = check_citations(article, blocks)
+def _assemble(
+    topic: str,
+    article: dict,
+    ctx: dict,
+    rules: list[dict],
+    style: str,
+) -> dict:
+    """模型写完之后的所有确定性收尾：引用核对、发前检查、配图、导出格式。"""
+    cites = check_citations(article, ctx["blocks"])
     review = review_article(article, rules)
     figs = attach_figures(article)
     return {
@@ -439,15 +509,56 @@ async def compose_article(
         "article": article,
         "markdown": article_to_markdown(article) + figures_to_markdown(figs),
         "html": export_html.article_to_html(article, figs),
-        "sources": blocks,
-        "rules": rule_items,
-        "meta": meta,
+        "sources": ctx["blocks"],
+        "rules": ctx["rule_items"],
+        "meta": ctx["meta"],
         "citations": cites,
         "review": review,
-        "style": styles.style_meta(spec, style),
+        "style": styles.style_meta(ctx["spec"], style),
         "figures": figs,
-        "model": cfg.deepseek_model,
+        "model": ctx["cfg"].deepseek_model,
     }
+
+
+async def compose_article(
+    topic: str,
+    rules: list[dict],
+    settings: deepseek.Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+    style: str = "auto",
+) -> dict:
+    """主流程：定文体 → 检索 → 成稿 → 校验出处与规范。返回可直接下发前端的结构。"""
+    ctx = _prepare(topic, rules, style, settings)
+    article = await _call_model_json(ctx["cfg"], ctx["system_prompt"], ctx["user_prompt"], client)
+    return _assemble(topic, article, ctx, rules, style)
+
+
+async def compose_article_stream(
+    topic: str,
+    rules: list[dict],
+    settings: deepseek.Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+    style: str = "auto",
+) -> AsyncIterator[dict]:
+    """流式成稿：先吐模型原始增量，收尾时再给完整结果。
+
+    事件：`meta`（文体）→ 若干 `delta`（JSON 片段）→ `done`（完整结果，同 /api/compose）。
+    检索与提示准备发生在第一个事件之前，所以首帧前会有一两秒静默。
+    """
+    ctx = _prepare(topic, rules, style, settings)
+    yield {"type": "meta", "style": styles.style_meta(ctx["spec"], style)}
+
+    buf: list[str] = []
+    async for delta in _stream_model_raw(ctx["cfg"], ctx["system_prompt"], ctx["user_prompt"], client):
+        buf.append(delta)
+        yield {"type": "delta", "text": delta}
+
+    raw = "".join(buf)
+    article = parse_article(raw)
+    if not article.get("sections"):
+        # 流被截断或模型跑飞：宁可报错让用户重试，也不要下发一篇空稿
+        raise deepseek.DeepSeekUnavailable("模型返回内容不完整，请重试")
+    yield {"type": "done", "result": _assemble(topic, article, ctx, rules, style)}
 
 
 async def revise_article(

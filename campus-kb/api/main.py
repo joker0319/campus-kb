@@ -15,7 +15,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse
+from fastapi.responses import FileResponse, StreamingResponse
 
 # checker.py 与 api/ 同级，保证 uvicorn 任意 cwd 启动都能导入
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -23,7 +23,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import checker  # noqa: E402  # sys.path 调整必须在前
 from . import agent  # noqa: E402
 from . import deepseek  # noqa: E402
-from .compose import compose_article, revise_article  # noqa: E402
+from .compose import compose_article, compose_article_stream, revise_article  # noqa: E402
 from . import docx_io  # noqa: E402
 from . import figures  # noqa: E402
 from . import search as corpus_search  # noqa: E402
@@ -245,6 +245,40 @@ async def compose(req: ComposeRequest, engine: EngineDep) -> ComposeResponse:
     except deepseek.DeepSeekUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return ComposeResponse(**result)
+
+
+@app.post("/api/compose/stream")
+async def compose_stream(req: ComposeRequest, engine: EngineDep) -> StreamingResponse:
+    """流式成稿（SSE），让写文章页能边生成边显示。
+
+    事件序列：`meta`（定下的文体）→ 若干 `delta`（模型原始 JSON 片段）→ `done`（完整结果，
+    字段同 `/api/compose`）。检索在首帧前完成，所以开头会静默一两秒。
+    出错不换 HTTP 状态（响应已经开始了），而是发一条 `error` 事件。
+    """
+    if not deepseek.get_settings().configured:
+        raise HTTPException(
+            status_code=503,
+            detail="未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥",
+        )
+
+    async def frames():
+        try:
+            async for event in compose_article_stream(req.topic, engine[0], style=req.style):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except deepseek.DeepSeekUnavailable as exc:
+            payload = {"type": "error", "message": str(exc)}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            # 关掉 nginx 一类反代的缓冲，否则增量会被攒着一起下发
+            "X-Accel-Buffering": "no",
+        },
+    )
 
 
 @app.post("/api/compose/revise")

@@ -29,7 +29,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 175 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、配图推荐 16 项、排版导出 9 项、语义检索 15 项
+uv run pytest                                             # 181 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、配图推荐 16 项、流式成稿 6 项、排版导出 9 项、语义检索 15 项
 ```
 
 | 接口 | 说明 |
@@ -45,6 +45,7 @@ uv run pytest                                             # 175 个用例，含 
 | `GET /api/figure/{id}` | → 图片二进制；界面上点「取原图」才请求这里（默认只显示占位块）。索引缺失或文件被删返回 404 |
 | `GET /api/figures/stats` | → `{ total, kinds }`，确认配图库状态 |
 | `POST /api/compose/revise` | `{ topic, instruction, article, sources[], rules[], style? }` → 同 compose 结构 + `instruction`；改稿：前端把上一版草稿与 `A#` 素材原样回传，服务端无状态、**不重新检索**（否则正文引用会指向别处），只按指令改被点名的部分，改完重跑引用核对 + `archive` 发前检查；模型输出不可解析时保留原稿 |
+| `POST /api/compose/stream` | 同上的入参，返回 **SSE**：`meta`（定下的文体）→ 若干 `delta`（模型原始 JSON 片段）→ `done`（完整结果，字段同 `/api/compose`）。首帧前的静默是后端在检索素材；出错不换状态码（响应已开始），改发 `error` 事件。正文仍是 JSON 模式，前端用增量解析边收边渲染 |
 
 AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat`、`/api/agent`、`/api/compose`、`/api/compose/revise` 不可用，其他接口不受影响。
 
@@ -292,6 +293,24 @@ campus-kb/
 - 配图库只在本地：图片与索引都在 `corpus/`（真实师生影像，不入库），换机器需重跑建库 + 重新标注。
 - 配图推荐靠图注文字匹配，图库没覆盖的主题（如新活动）会返回空——设计上宁可空着，不拿不相关的图凑数。
 - 排版导出的字号、主色写死在 `api/export_html.py` 常量里，换版式要改代码（`corpus/layout.json` 目前只服务于校稿台渲染）。
+
+## 流式成稿（api/compose.py + /api/compose/stream）
+
+一次成稿要等十几秒，界面空转很难受。链路改成 SSE 后，第一批字 1 秒左右就出来：
+
+- 后端 `_stream_model_raw` 调 DeepSeek 的 `stream: true`，逐行解析 `data: {...}` 取
+  `choices[0].delta.content`，注释行/心跳行跳过而不是中断；
+- **JSON 模式保留**（`response_format: json_object`）——结构化输出比"好看的流"重要，
+  代价是增量是 JSON 片段；
+- 事件三件套：`meta`（文体）→ `delta`（原文片段）→ `done`（完整结果，字段与
+  `/api/compose` 完全一致）。检索在首帧前做完，所以开头有 1 秒左右静默；
+- 流被截断时（解析不出 `sections`）直接抛错，让用户重试，不下发空稿；
+- 前端 `readPartial()` 只认**已闭合**的字符串字段，所以半句话不会被吐出来再改；
+  模型按 title → lead → sections 顺序写，于是标题、导语、段落能依次铺开；
+- 前端状态更新按 60ms 节流：模型一秒吐上百个碎片，逐帧 setState 只会白渲染。
+
+真实链路（新生报到选题）：0.75s 收到 `meta`、1.22s 首个 `delta`、4.4s `done`，
+共 890 个增量帧 / 2105 字符，成稿 4 节、`grounded=True`、配图 8 张。
 
 ## 排版导出（api/export_html.py）
 

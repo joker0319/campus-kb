@@ -1,12 +1,14 @@
 import { useRef, useState } from 'react';
 import {
-  postCompose,
   postRevise,
+  streamCompose,
   type ComposeFigure,
   type ComposeResult,
   type ComposeSource,
+  type ComposeStyle,
   type ComposeStyleId,
 } from '../lib/api';
+import { readPartial } from '../lib/partialArticle';
 import s from '../styles/compose.module.css';
 
 const SUGGESTIONS = [
@@ -80,6 +82,8 @@ function timeLabel(at: number): string {
 type State =
   | { kind: 'idle' }
   | { kind: 'loading' }
+  /** 流式成稿中：raw 是模型原文增量，渲染时用 readPartial 现解 */
+  | { kind: 'streaming'; raw: string; style: ComposeStyle | null }
   | { kind: 'done'; versions: ComposeResult[]; index: number; draftId: string }
   | { kind: 'error'; message: string };
 
@@ -141,17 +145,45 @@ export default function Compose() {
   const resultRef = useRef<HTMLDivElement | null>(null);
 
   const current = state.kind === 'done' ? state.versions[state.index] : null;
-  const busy = state.kind === 'loading';
+  const busy = state.kind === 'loading' || state.kind === 'streaming';
+  // 流式预览每帧现解一次原文：几 KB 的字符串，开销可以忽略
+  const partial = state.kind === 'streaming' ? readPartial(state.raw) : null;
 
   const generate = async (value: string) => {
     const clean = value.trim();
     if (clean.length < 2) return;
-    setState({ kind: 'loading' });
+    setState({ kind: 'streaming', raw: '', style: null });
     setCopied(null);
     setInstruction('');
     resultRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
+    let raw = '';
+    let metaStyle: ComposeStyle | null = null;
+    // 模型一次只吐几个字，逐帧 setState 会白白重渲染上百次；攒 60ms 刷一次
+    let flushTimer: number | null = null;
+    let finished = false;
+    const stopFlush = () => {
+      finished = true;
+      if (flushTimer !== null) window.clearTimeout(flushTimer);
+      flushTimer = null;
+    };
+
     try {
-      const result = await postCompose(clean, style);
+      const result = await streamCompose(clean, style, {
+        onMeta: (meta) => {
+          metaStyle = meta;
+          setState({ kind: 'streaming', raw, style: meta });
+        },
+        onDelta: (text) => {
+          raw += text;
+          if (finished || flushTimer !== null) return;
+          flushTimer = window.setTimeout(() => {
+            flushTimer = null;
+            if (finished) return;
+            setState({ kind: 'streaming', raw, style: metaStyle });
+          }, 60);
+        },
+      });
+      stopFlush();
       const draftId = newDraftId();
       setState({ kind: 'done', versions: [result], index: 0, draftId });
       setDrafts((prev) =>
@@ -160,6 +192,7 @@ export default function Compose() {
         ),
       );
     } catch (err: unknown) {
+      stopFlush();
       setState({
         kind: 'error',
         message: err instanceof Error ? err.message : '生成失败，请稍后重试',
@@ -351,7 +384,7 @@ export default function Compose() {
                 disabled={busy || topic.trim().length < 2}
                 onClick={() => void generate(topic)}
               >
-                {busy ? '正在检索并成稿…' : '生成文章'}
+                {busy ? '正在成稿…' : '生成文章'}
               </button>
               <span className={s.hint}>⌘/Ctrl + Enter 快速生成</span>
             </div>
@@ -376,6 +409,52 @@ export default function Compose() {
           {state.kind === 'error' && (
             <div className={s.error} role="alert">
               {state.message}
+            </div>
+          )}
+
+          {state.kind === 'streaming' && partial && (
+            <div className={s.result} ref={resultRef} aria-live="polite" aria-busy="true">
+              <div className={s.resultBar}>
+                <span className={s.resultTitle}>正在成稿</span>
+                {state.style ? (
+                  <span className={s.badge}>
+                    {state.style.auto ? `自动 · ${state.style.name}` : state.style.name}
+                  </span>
+                ) : (
+                  <span className={s.badge}>检索素材</span>
+                )}
+                <span className={s.badge}>{partial.chars} 字</span>
+                <span className={s.spacer} />
+                <span className={s.streamLive}>正在写</span>
+              </div>
+
+              <article className={s.article}>
+                {partial.title ? (
+                  <h2 className={s.articleTitle}>{partial.title}</h2>
+                ) : (
+                  <h2 className={`${s.articleTitle} ${s.streamGhost}`}>正在拟标题…</h2>
+                )}
+                {partial.lead && <p className={s.lead}>{partial.lead}</p>}
+
+                {partial.sections.map((sec, si) => (
+                  <section className={s.sec} key={si}>
+                    {sec.heading && <h3 className={s.secHeading}>{sec.heading}</h3>}
+                    {sec.paragraphs.map((text, pi) => (
+                      <p className={s.para} key={pi}>
+                        {text}
+                      </p>
+                    ))}
+                  </section>
+                ))}
+
+                {partial.sections.length === 0 && (
+                  <p className={`${s.para} ${s.streamGhost}`}>
+                    {partial.title || partial.lead
+                      ? '正在写正文…'
+                      : '正在检索素材、构思结构…'}
+                  </p>
+                )}
+              </article>
             </div>
           )}
 

@@ -196,6 +196,34 @@
   border-color: var(--ok);
   color: var(--ok);
 }
+/* 流式成稿：呼吸小圆点 + 未写到的字段用浅灰占位，不抢已完成内容的注意力 */
+.streamLive {
+  display: inline-flex;
+  align-items: center;
+  gap: 5px;
+  font-size: 11.5px;
+  color: var(--ink-3);
+}
+.streamLive::before {
+  content: '';
+  width: 6px;
+  height: 6px;
+  border-radius: 50%;
+  background: var(--ok);
+  animation: pulse 1.1s ease-in-out infinite;
+}
+@keyframes pulse {
+  0%,
+  100% {
+    opacity: 0.2;
+  }
+  50% {
+    opacity: 1;
+  }
+}
+.streamGhost {
+  color: var(--ink-4);
+}
 .badgeWarn {
   border-color: var(--warn);
   color: var(--warn);

@@ -34,7 +34,8 @@ src/
   types.ts              领域模型（Issue 用 `${ruleId}@${line}` 作稳定 key）
   data/content.ts       送审稿件与规则出处（依据栏）；命中不再内置
   lib/review.ts         纯函数：筛选、计数、键盘导航、标记严重度
-  lib/api.ts            /api/review + /api/review-file + /api/agent + /api/compose + /api/compose/revise + /api/figure/{id}：映射、收敛、Agent 对话、文章生成与改稿、往期配图占位（点「取原图」才请求图片）
+  lib/api.ts            /api/review + /api/review-file + /api/agent + /api/compose/stream（SSE）+ /api/compose/revise + /api/figure/{id}：映射、收敛、Agent 对话、流式成稿、改稿、往期配图占位（点「取原图」才请求图片）
+  lib/partialArticle.ts 流式成稿时的增量解析：只认已闭合的 JSON 字段，边收边渲染标题/导语/段落
   lib/segments.ts       按命中词切分正文（split + 捕获组，比 replace 安全）
   lib/buildDraft.ts     任意正文 + 后端精确 hit → 带 issueKeys 的 Draft（动态标红）
   lib/countUp.ts        数字滚动（进度钳制，防 rAF 负时间差）
