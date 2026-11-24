@@ -90,14 +90,20 @@ const KIND_LABEL: Record<string, string> = {
   poster: '海报',
 };
 
-/** 每节末尾的可用配图：真图 + 出处，点下载能直接拿到文件。 */
+/** 每节末尾的可用配图：只显示占位块 + 图注与出处，不加载真实照片。
+ *  编辑按图注自行替换/找图；确实要用这张时点「取原图」才发起图片请求。 */
 function FigureStrip({ items }: { items: readonly ComposeFigure[] }) {
   if (items.length === 0) return null;
   return (
     <div className={s.figs}>
       {items.map((f) => (
         <figure className={s.fig} key={f.id}>
-          <img className={s.figImg} src={f.url} alt={f.caption} loading="lazy" />
+          <div className={s.figPh} role="img" aria-label={f.caption}>
+            <span className={s.figPhMark}>配图占位</span>
+            <span className={s.figPhSize}>
+              {f.width}×{f.height}
+            </span>
+          </div>
           <figcaption className={s.figCap}>
             <span className={s.figTag}>{KIND_LABEL[f.kind] ?? f.kind}</span>
             {f.caption}
@@ -109,7 +115,7 @@ function FigureStrip({ items }: { items: readonly ComposeFigure[] }) {
               <span className={s.figDate}>{f.sourcePublished}</span>
             </span>
             <a className={s.figDl} href={f.url} download>
-              下载
+              取原图
             </a>
           </div>
         </figure>

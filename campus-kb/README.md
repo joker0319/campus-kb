@@ -42,7 +42,7 @@ uv run pytest                                             # 155 个用例，含 
 | `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
 | `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
 | `POST /api/compose` | `{ topic, style? }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
-| `GET /api/figure/{id}` | → 图片二进制；成稿返回的 `figures[].url` 就指向这里。索引缺失或文件被删返回 404，前端显示占位 |
+| `GET /api/figure/{id}` | → 图片二进制；界面上点「取原图」才请求这里（默认只显示占位块）。索引缺失或文件被删返回 404 |
 | `GET /api/figures/stats` | → `{ total, kinds }`，确认配图库状态 |
 | `POST /api/compose/revise` | `{ topic, instruction, article, sources[], rules[], style? }` → 同 compose 结构 + `instruction`；改稿：前端把上一版草稿与 `A#` 素材原样回传，服务端无状态、**不重新检索**（否则正文引用会指向别处），只按指令改被点名的部分，改完重跑引用核对 + `archive` 发前检查；模型输出不可解析时保留原稿 |
 
@@ -102,9 +102,16 @@ uv run python tools/apply_captions.py        # 回填 captions.json 并重建 IN
 弱命中」变成「8 张全强命中」——报到段落推出「新生在报到现场排队交谈」「新生在报到台
 办理资格核验」，开学典礼段落推出「嘉宾在开学典礼上讲台致辞」，来源都是新入库的推文。
 
+**展示方式：只用占位，不加载真实照片。** 前端每节末尾给的是灰底斜纹占位块（写明
+「配图占位」+ 原图尺寸），下面跟图注、性质、来源推文与日期，右侧「取原图」才请求
+`/api/figure/{id}`。这样做有三点好处：首屏不用拉几十张几百 KB 的原图；往期推文里的
+真实师生影像不会随手被打包进页面；旧 id 失效也只是占位少一张图，不会出现破图。导出的
+Markdown 同理，只写 `〔配图占位：图注〕　参考来源：《…》日期`，不嵌 `/api/figure` 链接
+——那个地址贴到公众号后台别人打不开，编辑本来就该按图注换成现场实拍图。
+
 索引 `corpus/images/INDEX.json` 与图片本体都在 `corpus/`（含真实师生影像，已 gitignore），
 只在本机存在：换机器要重跑建库脚本，标注需重新做。**id 换代的影响**：改造前存的
-草稿里旧的 `f0001` 图片链接会 404，重新生成或手动换图即可。
+草稿里旧的 `f0001` 图片链接会 404，重新生成即可。
 
 ## 语义检索（api/rag.py）
 

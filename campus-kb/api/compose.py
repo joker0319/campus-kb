@@ -392,16 +392,20 @@ def attach_figures(article: dict) -> list[dict]:
 
 
 def figures_to_markdown(figs: list[dict]) -> str:
-    """导出的 Markdown 里带上真图链接与来源，方便按顺序贴进公众号后台。"""
+    """导出 Markdown 只给配图位置与图注，不嵌真实图片链接。
+
+    编辑拿这份稿子去公众号后台排版时，本来就该换成现场图/官方图；
+    嵌本地 /api/figure 链接反而会贴出一个别人打不开的地址。
+    """
     if not figs:
         return ""
-    lines = ["---\n### 可用配图（来自往期推文，请自行确认是否适用）\n"]
+    lines = ["---\n### 配图占位（图注来自往期推文配图，请按此替换成实拍图）\n"]
     for f in figs:
         warn = "（关联度一般，需人工确认）" if f.get("weak") else ""
         lines.append(
             f"- 第{f['sectionIndex'] + 1}节「{f['sectionHeading']}」："
-            f"![{f['caption']}]({f['url']}) {f['caption']}{warn}"
-            f"　来源：《{f['sourceTitle']}》{f['sourcePublished']}"
+            f"〔配图占位：{f['caption']}〕{warn}"
+            f"　参考来源：《{f['sourceTitle']}》{f['sourcePublished']}"
         )
     return "\n".join(lines) + "\n"
 

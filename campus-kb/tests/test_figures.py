@@ -166,8 +166,10 @@ class TestComposeIntegration:
         assert figs and figs[0]["url"] == "/api/figure/f0001"
 
         md = compose.figures_to_markdown(figs)
-        assert "可用配图" in md
-        assert "/api/figure/f0001" in md
+        assert "配图占位" in md
+        assert "水下机器人" in md
+        # 导出稿只给占位与图注，不嵌本地接口链接（别人打不开）
+        assert "/api/figure/" not in md
         assert "《水下机器人国赛夺魁》" in md
 
     def test_index_missing_does_not_break_compose(self, tmp_path: Path, monkeypatch: pytest.MonkeyPatch) -> None:

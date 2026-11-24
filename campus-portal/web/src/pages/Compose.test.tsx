@@ -1,4 +1,4 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { render, screen, waitFor, within } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import Compose from './Compose';
@@ -299,15 +299,18 @@ describe('写文章页 — 可用配图', () => {
     vi.unstubAllGlobals();
   });
 
-  it('每节末尾显示真图、出处与下载入口', async () => {
+  it('每节末尾用占位块给出图注、出处与取原图入口', async () => {
     const user = userEvent.setup();
     render(<Compose />);
     await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
     await user.click(screen.getByRole('button', { name: '生成文章' }));
     await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
 
-    const img = screen.getByAltText<HTMLImageElement>('QS世界排名第52图文卡');
-    expect(img.getAttribute('src')).toBe('/api/figure/f0058');
+    // 占位块：有图注可读，但页面不加载真实照片（不发起 /api/figure 请求）
+    const ph = screen.getByRole('img', { name: 'QS世界排名第52图文卡' });
+    expect(within(ph).getByText('配图占位')).toBeTruthy();
+    expect(within(ph).getByText('1080×720')).toBeTruthy();
+    expect(screen.queryByAltText('QS世界排名第52图文卡')).toBeNull();
     expect(screen.getByText('图表')).toBeTruthy();
     // 来源标题与日期分两行显示：日期单独一行，长标题截断也不会把日期切掉
     expect(
@@ -316,7 +319,7 @@ describe('写文章页 — 可用配图', () => {
     expect(screen.getByText('2026-11-04')).toBeTruthy();
     expect(screen.getByText('配图 2 张可选')).toBeTruthy();
 
-    const links = screen.getAllByRole<HTMLAnchorElement>('link', { name: '下载' });
+    const links = screen.getAllByRole<HTMLAnchorElement>('link', { name: '取原图' });
     expect(links.map((a) => a.getAttribute('href'))).toEqual([
       '/api/figure/f0058',
       '/api/figure/f0090',
