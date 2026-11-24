@@ -104,8 +104,9 @@ function FigureStrip({ items }: { items: readonly ComposeFigure[] }) {
             {f.weak && <span className={s.figWeak}>关联度一般，请确认</span>}
           </figcaption>
           <div className={s.figFoot}>
-            <span className={s.figSrc}>
-              《{f.sourceTitle}》{f.sourcePublished}
+            <span className={s.figMeta}>
+              <span className={s.figSrc}>《{f.sourceTitle}》</span>
+              <span className={s.figDate}>{f.sourcePublished}</span>
             </span>
             <a className={s.figDl} href={f.url} download>
               下载

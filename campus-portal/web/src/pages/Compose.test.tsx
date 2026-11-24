@@ -309,9 +309,11 @@ describe('写文章页 — 可用配图', () => {
     const img = screen.getByAltText<HTMLImageElement>('QS世界排名第52图文卡');
     expect(img.getAttribute('src')).toBe('/api/figure/f0058');
     expect(screen.getByText('图表')).toBeTruthy();
+    // 来源标题与日期分两行显示：日期单独一行，长标题截断也不会把日期切掉
     expect(
-      screen.getByText('《亚洲第4，香港第2！港城大2027QS亚洲大学排名创历史新高》2026-11-04'),
+      screen.getByText('《亚洲第4，香港第2！港城大2027QS亚洲大学排名创历史新高》'),
     ).toBeTruthy();
+    expect(screen.getByText('2026-11-04')).toBeTruthy();
     expect(screen.getByText('配图 2 张可选')).toBeTruthy();
 
     const links = screen.getAllByRole<HTMLAnchorElement>('link', { name: '下载' });

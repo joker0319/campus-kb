@@ -658,16 +658,34 @@ details[open] .dSummary::before {
   margin-top: auto;
   padding: 5px 9px 8px;
   display: flex;
-  align-items: baseline;
+  /* 来源现在可能占两行，按钮贴底对齐比按基线对齐更稳 */
+  align-items: flex-end;
   gap: 6px;
 }
-.figSrc {
+.figMeta {
   flex: 1;
   min-width: 0;
+  display: flex;
+  flex-direction: column;
+  gap: 1px;
+}
+.figSrc {
   font-size: 10.5px;
+  line-height: 1.45;
   color: var(--ink-4);
+  /* 单行截断会把「《喜讯丨港城莞41位学者入选"2026…」切在引号里，认不出是哪篇；
+     给两行，仍限制高度不撑破卡片。 */
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
   overflow: hidden;
-  text-overflow: ellipsis;
+  word-break: break-all;
+}
+.figDate {
+  font-family: var(--mono);
+  font-size: 10px;
+  line-height: 1.4;
+  color: var(--ink-4);
   white-space: nowrap;
 }
 .figDl {

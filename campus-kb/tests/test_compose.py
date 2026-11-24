@@ -75,6 +75,36 @@ class TestParseArticle:
         assert article["title"] == ""
         assert article["sections"] == []
 
+    def test_inline_cites_move_out_of_text(self) -> None:
+        """模型把 [A1] 写进正文时，正文要干净、编号并回 cites，前端只渲染一次角标。"""
+        payload = _article_payload()
+        payload["sections"][0]["paragraphs"] = [
+            {"text": "据档案记载，学校取得进展。[A1][A2]", "cites": ["A1"]},
+        ]
+        article = compose.parse_article(json.dumps(payload, ensure_ascii=False))
+        para = article["sections"][0]["paragraphs"][0]
+        assert "[A1]" not in para["text"] and "[A2]" not in para["text"]
+        assert para["text"] == "据档案记载，学校取得进展。"
+        # 正文明写的编号并回 cites，且与显式给的编号去重
+        assert para["cites"] == ["A1", "A2"]
+
+    def test_inline_cites_stripped_from_title_and_lead(self) -> None:
+        payload = _article_payload()
+        payload["title"] = "港城莞科研新进展 [A1]"
+        payload["lead"] = "一句话导语[A2]"
+        article = compose.parse_article(json.dumps(payload, ensure_ascii=False))
+        assert article["title"] == "港城莞科研新进展"
+        assert article["lead"] == "一句话导语"
+
+    def test_fullwidth_brackets_also_stripped(self) -> None:
+        payload = _article_payload()
+        payload["sections"][0]["paragraphs"] = [{"text": "正文内容【A1】", "cites": []}]
+        para = compose.parse_article(json.dumps(payload, ensure_ascii=False))["sections"][0][
+            "paragraphs"
+        ][0]
+        assert para["text"] == "正文内容【A1】"  # 中文方头括号是正常正文，不改动
+        assert para["cites"] == []
+
 
 class TestCheckCitations:
     def test_grounded_when_all_paragraphs_cited(self) -> None:

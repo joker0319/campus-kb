@@ -17,6 +17,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any
 
 import httpx
@@ -174,6 +175,19 @@ def _strip_code_fence(text: str) -> str:
     return t.strip()
 
 
+# 模型经常把 [A1] 直接写进正文（而不是只放在 cites 里），前端再渲染一次角标
+# 就会显示成「[A1] [A1]」。这里把正文里的标记剥出来并回填到 cites：
+# 显示只出现一次，引用核对照样能发现无效编号。
+INLINE_CITE_RE = re.compile(r"[\[［]\s*([A-Za-z])\s*(\d{1,3})\s*[\]］]")
+
+
+def _split_inline_cites(text: str) -> tuple[str, list[str]]:
+    found = [f"{m.group(1)}{m.group(2)}".upper() for m in INLINE_CITE_RE.finditer(text)]
+    cleaned = INLINE_CITE_RE.sub("", text)
+    cleaned = re.sub(r"[ \t]{2,}", " ", cleaned)
+    return cleaned.strip(), found
+
+
 def parse_article(raw: str) -> dict:
     """把模型输出解析为结构化文章；非法结构降级为空草稿，不抛异常给调用方。"""
     try:
@@ -194,10 +208,17 @@ def parse_article(raw: str) -> dict:
         for p in sec.get("paragraphs") or []:
             if not isinstance(p, dict):
                 continue
-            cites = [str(c).strip().upper() for c in (p.get("cites") or []) if str(c).strip()]
-            paragraphs.append({"text": clean_text(p.get("text")), "cites": cites[:8]})
+            text, inline_cites = _split_inline_cites(clean_text(p.get("text")))
+            cites: list[str] = []
+            for ref in inline_cites + [
+                str(c).strip().upper() for c in (p.get("cites") or []) if str(c).strip()
+            ]:
+                if ref not in cites:
+                    cites.append(ref)
+            paragraphs.append({"text": text, "cites": cites[:8]})
+        heading, _ = _split_inline_cites(clean_text(sec.get("heading")))
         sections.append({
-            "heading": clean_text(sec.get("heading")),
+            "heading": heading,
             "paragraphs": paragraphs,
         })
 
@@ -209,9 +230,12 @@ def parse_article(raw: str) -> dict:
                 "description": clean_text(im.get("description")),
             })
 
+    # 标题与导语没有引用字段，正文标记直接摘掉，避免露出 [A1] 这种内部编号
+    title, _ = _split_inline_cites(clean_text(data.get("title")))
+    lead, _ = _split_inline_cites(clean_text(data.get("lead")))
     return {
-        "title": clean_text(data.get("title")),
-        "lead": clean_text(data.get("lead")),
+        "title": title,
+        "lead": lead,
         "sections": sections,
         "imageSuggestions": images,
     }
