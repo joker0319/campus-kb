@@ -131,7 +131,14 @@ def gather_material(topic: str, rules: list[dict]) -> tuple[list[dict], list[dic
 
 
 def build_context(blocks: list[dict], rule_items: list[dict]) -> str:
-    lines = ["【素材库】（每条的编号用于正文引用）"]
+    lines: list[str] = []
+    brief = checker.authority_brief()
+    if brief:
+        lines.append("【口径约束】（非素材，不可作为 [A#] 引用）")
+        lines.append(brief)
+        lines.append("涉及上述口径时按权威值写；素材库若出现旧版数值，以此为准。")
+        lines.append("")
+    lines.append("【素材库】（每条的编号用于正文引用）")
     for b in blocks:
         lines.append(f"- [{b['ref']}] {b['text']}（来源：{b['file']} 第 {b['line']} 行）")
     if not blocks:

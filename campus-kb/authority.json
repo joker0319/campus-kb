@@ -1,0 +1,30 @@
+{
+  "schema": 1,
+  "decided_by": "香港城市大学（东莞）媒体传讯处",
+  "decided_at": "2026-11-24",
+  "summary": "口径裁决：规范版本与 QS 排名一律以本文件为准；旧版本与副本忽略。",
+  "manual": {
+    "canonical_version": "20260618",
+    "superseded": ["2026.05"],
+    "ignored_copies": ["封面标注 2026.05 的旧版", "文件名带 (2) 的副本"],
+    "rule": "引用规范一律标注 20260618；2026.05 与任何副本不作为依据，不参与口径判定。"
+  },
+  "facts": {
+    "QS_2027": {
+      "label": "2027 年 QS 世界大学排名（香港城市大学）",
+      "value": 52,
+      "canonical_text": "第52位",
+      "rejected_values": [63],
+      "note": "中文旧版写「第63位」，已废止；英文版写「52rd」，数值正确但序数词拼错，正确写法为 52nd。",
+      "evidence": [
+        "corpus/text/亚洲第4，香港第2！港城大2027QS亚洲大学排名创历史新高_20261104_WX.txt",
+        "corpus/text/香港城市大学（东莞）2027-2028学年硕士研究生申请指南来啦！_20261009_WX.txt"
+      ]
+    }
+  },
+  "usage": [
+    "checker.py:h_rank_conflict —— 校验文内排名是否偏离权威值",
+    "api/agent.py:SYSTEM_PROMPT —— 问答涉及排名时按权威值作答",
+    "api/compose.py —— 素材上下文注入权威口径，避免沿用旧版数值"
+  ]
+}

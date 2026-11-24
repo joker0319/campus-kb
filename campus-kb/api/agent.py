@@ -39,6 +39,14 @@ SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的内容�
 - 回答简洁，引用档案时带上工具结果里的文件名与行号。
 """
 
+# 权威口径取自单一事实源 authority.json，避免在多处硬编码后再次漂移
+_AUTHORITY = checker.authority_brief()
+if _AUTHORITY:
+    SYSTEM_PROMPT += (
+        "\n【权威口径】" + _AUTHORITY
+        + "\n涉及上述口径时一律按权威值作答，不得引用被忽略的旧版或副本数值。"
+    )
+
 # 工具定义（OpenAI / DeepSeek function calling 格式）
 TOOLS: list[dict[str, Any]] = [
     {

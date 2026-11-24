@@ -16,6 +16,7 @@ import json
 import re
 import sys
 from datetime import datetime
+from functools import lru_cache
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parent
@@ -26,6 +27,40 @@ SEV_RANK = {"error": 0, "warn": 1, "info": 2}
 SEV_LABEL = {"error": "错误", "warn": "警告", "info": "提示"}
 C = {"error": "\033[31m", "warn": "\033[33m", "info": "\033[36m",
      "dim": "\033[2m", "bold": "\033[1m", "off": "\033[0m"}
+
+
+@lru_cache(maxsize=1)
+def load_authority():
+    """媒体传讯处口径裁决的单一事实源（authority.json）。
+
+    规则引擎、Agent 系统提示、文章生成都从这里取权威版本与权威数值，
+    避免同一个口径在多处硬编码后再次漂移。文件缺失时返回空字典，
+    校验链不会因此中断。
+    """
+    try:
+        return json.loads((ROOT / "authority.json").read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+
+
+def authority_brief():
+    """给 Agent / 文章生成用的一句话口径摘要。"""
+    data = load_authority()
+    if not data:
+        return ""
+    version = data.get("manual", {}).get("canonical_version", "")
+    ignored = "、".join(data.get("manual", {}).get("ignored_copies", []))
+    facts = []
+    for key, item in data.get("facts", {}).items():
+        facts.append("%s权威值为%s" % (item.get("label", key), item.get("canonical_text", item.get("value"))))
+    parts = []
+    if version:
+        parts.append("规范版本以 %s 为准" % version)
+    if ignored:
+        parts.append("%s一律忽略" % ignored)
+    if facts:
+        parts.append("；".join(facts))
+    return "；".join(parts) + "。"
 
 
 def mk(rule, line_no, excerpt, message, suggestion=None, hit=None):
@@ -246,6 +281,11 @@ def h_category_required(rule, text):
 
 def h_rank_conflict(rule, text):
     year = rule["params"]["year"]
+    # 权威值优先取单一事实源 authority.json，规则自带值仅作兜底
+    auth = load_authority().get("facts", {}).get(
+        rule["params"].get("authority_key", ""), {}
+    )
+    canonical = auth.get("value", rule["params"].get("authoritative"))
     pats = [
         r"QS[^\n。；]{0,35}?%s[^\n。；]{0,18}?(\d{1,3})" % year,
         r"%s[^\n。；]{0,35}?QS[^\n。；]{0,18}?(\d{1,3})" % year,
@@ -257,11 +297,23 @@ def h_rank_conflict(rule, text):
             if 1 <= v <= 300:
                 hits.append((m.start(), v))
     vals = sorted({v for _, v in hits})
-    if len(vals) > 1:
-        pos = hits[0][0]
-        return [mk(rule, line_of(text, pos), frag(text, pos, pos + 12),
-                   "文内 QS %s 排名出现多个不同数值 %s" % (year, vals), hit=str(hits[0][1]))]
-    return []
+    if not vals:
+        return []
+    # 两种情况合并为一条命中：① 文内多个数值冲突；② 单一数值但偏离权威口径
+    # （合并且只在有问题时返回，保证坏样例基线命中数不变）
+    conflict = len(vals) > 1
+    deviates = canonical is not None and any(v != canonical for v in vals)
+    if not (conflict or deviates):
+        return []
+    pos = hits[0][0]
+    if conflict:
+        msg = "文内 QS %s 排名出现多个不同数值 %s" % (year, vals)
+    else:
+        msg = "文内 QS %s 排名记为第 %s 位" % (year, vals[0])
+    if deviates:
+        msg += "；与权威口径第 %s 位不符，须更正" % canonical
+    return [mk(rule, line_of(text, pos), frag(text, pos, pos + 12),
+               msg, hit=str(hits[0][1]))]
 
 
 HANDLERS = {

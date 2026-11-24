@@ -1,17 +1,19 @@
 {
-  "source": "香港城市大学（东莞）常用表述规范手册 2026.05｜三、常用信息：排名相关",
+  "source": "香港城市大学（东莞）常用表述规范手册 20260618｜三、常用信息：排名相关",
   "rules": [
     {
       "id": "RANK-001",
       "category": "数据一致性",
       "severity": "error",
       "type": "rank_conflict",
-      "desc": "同一届次排名在文内出现不同数值，须核对权威来源",
+      "desc": "同一届次排名在文内出现不同数值，或数值偏离权威口径，须更正",
       "params": {
         "year": "2027",
-        "indicator": "QS"
+        "indicator": "QS",
+        "authority_key": "QS_2027",
+        "authoritative": 52
       },
-      "suggestion": "以 https://www.cityu.edu.hk 官方发布为准；手册中文版与英文版当前存在 63 / 52 的冲突，需媒体传讯处确认后统一"
+      "suggestion": "以《常用表述规范手册 20260618》为准：2027 年 QS 世界大学排名为第 52 位；第 63 位为旧版（2026.05）错误值，「52rd」为英文版序数词笔误（应为 52nd），副本一律忽略。见 authority.json"
     }
   ]
 }
