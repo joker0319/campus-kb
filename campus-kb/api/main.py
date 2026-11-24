@@ -15,6 +15,7 @@ from typing import Annotated
 
 from fastapi import Depends, FastAPI, File, HTTPException, Query, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import FileResponse
 
 # checker.py 与 api/ 同级，保证 uvicorn 任意 cwd 启动都能导入
 sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
@@ -24,6 +25,7 @@ from . import agent  # noqa: E402
 from . import deepseek  # noqa: E402
 from .compose import compose_article, revise_article  # noqa: E402
 from . import docx_io  # noqa: E402
+from . import figures  # noqa: E402
 from . import search as corpus_search  # noqa: E402
 
 from .schemas import (  # noqa: E402
@@ -267,3 +269,24 @@ async def revise(req: ReviseRequest, engine: EngineDep) -> ReviseResponse:
     except deepseek.DeepSeekUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return ReviseResponse(**result)
+
+
+@app.get("/api/figure/{figure_id}")
+def get_figure(figure_id: str) -> FileResponse:
+    """按 id 下发往期推文里的真实配图。
+
+    语料图片目录不在 git 里（含真实师生影像），只在本机存在；索引缺失或图被删时
+    返回 404，前端显示占位，不影响正文阅读。
+    """
+    path = figures.resolve(figure_id)
+    if path is None:
+        raise HTTPException(status_code=404, detail=f"配图不存在：{figure_id}")
+    return FileResponse(path)
+
+
+@app.get("/api/figures/stats")
+def figure_stats() -> dict:
+    """配图库概况：各类图张数，用于确认索引状态。"""
+    if not figures.available():
+        return {"total": 0, "kinds": {}, "hint": "先执行 uv run python tools/build_figure_index.py"}
+    return {"total": figures.available(), "kinds": dict(figures.kind_stats())}

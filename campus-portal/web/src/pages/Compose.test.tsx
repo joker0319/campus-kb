@@ -36,6 +36,36 @@ const RESULT: ComposeResult = {
     findings: [],
   },
   style: { id: 'news', name: '新闻动态', auto: true },
+  figures: [
+    {
+      id: 'f0058',
+      url: '/api/figure/f0058',
+      caption: 'QS世界排名第52图文卡',
+      kind: 'chart',
+      width: 1080,
+      height: 720,
+      sourceTitle: '亚洲第4，香港第2！港城大2027QS亚洲大学排名创历史新高',
+      sourcePublished: '2026-11-04',
+      sectionIndex: 0,
+      sectionHeading: '科研',
+      score: 1.02,
+      weak: false,
+    },
+    {
+      id: 'f0090',
+      url: '/api/figure/f0090',
+      caption: '毕业生抛帽合影',
+      kind: 'crowd',
+      width: 1080,
+      height: 720,
+      sourceTitle: '喜讯丨港城莞41位学者入选榜单',
+      sourcePublished: '2026-10-10',
+      sectionIndex: 0,
+      sectionHeading: '科研',
+      score: 0.93,
+      weak: true,
+    },
+  ],
   model: 'deepseek-chat',
 };
 
@@ -256,5 +286,48 @@ describe('写文章页 — 文体模板', () => {
 
     const rev = fetchMock.mock.calls.find(([input]) => urlOf(input).includes('/revise'));
     expect(bodyOf(rev?.[1])).toMatchObject({ style: 'celebration' });
+  });
+});
+
+describe('写文章页 — 可用配图', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    mockByUrl();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('每节末尾显示真图、出处与下载入口', async () => {
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+    await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
+
+    const img = screen.getByAltText<HTMLImageElement>('QS世界排名第52图文卡');
+    expect(img.getAttribute('src')).toBe('/api/figure/f0058');
+    expect(screen.getByText('图表')).toBeTruthy();
+    expect(
+      screen.getByText('《亚洲第4，香港第2！港城大2027QS亚洲大学排名创历史新高》2026-11-04'),
+    ).toBeTruthy();
+    expect(screen.getByText('配图 2 张可选')).toBeTruthy();
+
+    const links = screen.getAllByRole<HTMLAnchorElement>('link', { name: '下载' });
+    expect(links.map((a) => a.getAttribute('href'))).toEqual([
+      '/api/figure/f0058',
+      '/api/figure/f0090',
+    ]);
+  });
+
+  it('弱命中要标出「关联度一般」', async () => {
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+    await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
+
+    expect(screen.getByText('关联度一般，请确认')).toBeTruthy();
   });
 });

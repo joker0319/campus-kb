@@ -31,7 +31,8 @@
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
 | RAG 语义检索 `api/rag.py` | ✅ 可用 | 50 份语料切成 771 个带起止行号的段落块；BM25（字符 2-gram）+ 本地 ONNX `bge-small-zh-v1.5` 向量，RRF 融合；模型缺失自动降级纯 BM25。向量索引按语料版本戳落盘，入库新文章自动重建 |
 | 文章生成 `#/compose` | ✅ 可用 | 选文体（自动判断 / 新闻动态 / 喜讯捷报 / 致辞讲稿，各带结构骨架与语气要求）→ 输入选题 → 检索知识库 → DeepSeek 成结构化草稿（标题/导语/分节正文/配图建议）→ 后端校验每段出处 + 发前规范检查；成稿后可**继续下指令改稿**（沿用原素材编号、保留多版本可回看），草稿存本地刷新不丢；无依据段落明确标注，不臆测。`POST /api/compose` + `POST /api/compose/revise`，真实密钥端到端验证通过 |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/revise`（改稿），139 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 配图推荐 `api/figures.py` | ✅ 可用 | 把 24 篇往期推文抓下的 657 张原图筛成 **177 张真配图**（滤掉分隔线/图标/占位块/动图，按字节去重），逐张标注描述与性质后建成图库；成稿按「图注 + 来源文章」给每节推可用真图，实景优先、肖像不推、分数不够宁可空着；前端显示缩略图 + 图注 + 来源推文并可下载，导出的 Markdown 带图链接 |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/revise`（改稿）、`/api/figure/{id}`（往期配图下发）、`/api/figures/stats`（图库状态），155 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 公众号语料入库 | ✅ 可用 | `campus-kb/tools/fetch_wechat.py` 抓自有公众号推文转 `corpus/text/*_WX.txt`，`_WX` 标记来源；文字型直接提取，长图型用 macOS Vision OCR（`tools/ocr.swift`，切片拼接识别）。入库即可被 `/api/search` 与 Agent 检索，无需重启 |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
@@ -139,6 +140,16 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - 模型返回不可解析内容时**保留原稿**，不拿空白覆盖用户已认可的版本；
 - 前端保留最近 4 个版本可切换回看（在历史版本上继续改会从该版本分叉）；草稿存 `localStorage`（最多 5 篇，只留最新一版），刷新不丢。
 
+**配图：从往期推文里挑真图（`api/figures.py`）**
+
+- 成稿只给「建议配什么图」没用——稿子要发出去得有真照片。语料里 24 篇推文已抓下 657 张原图，这里把它们变成可检索图库；
+- 建库三步（都在 `campus-kb/tools/`）：`build_figure_index.py` 过滤碎图（分隔线 / 图标 / 1KB 占位块 / 动图）并按字节去重 → 657 张筛出 **177 张真配图**；`make_contact_sheets.py` 拼九宫格；`apply_captions.py` 把逐格标注（一句话描述 + 图像性质）回填进索引；
+- 标注结果：实景 50 / 肖像 41 / 合影 29 / 海报 24 / 图表 17 / 长图分段 11 / 二维码 3 / logo 2，可推 **120 张**；
+- 两条硬规则：**单人肖像不推**（真实师生影像涉及肖像权，留给编辑决定）；**分数不达阈值宁可不配图**，不拿不相关的图凑数；
+- 匹配按「图注相关度 0.7 + 来源文章相关度 0.3」× 图像性质权重（实景 1.0 / 合影 0.9 / 图表 0.75 / 海报 0.65），全篇不重复用同一张；图注与段落至少共享两个 2-gram 才算真命中，只靠来源标题蹭到分的标 `weak`（前端显示「关联度一般，请确认」）；
+- `GET /api/figure/{id}` 下发图片，`GET /api/figures/stats` 看图库状态；成稿 / 改稿返回 `figures[]`，每节末尾显示缩略图 + 图注 + 来源推文，可直接下载；导出的 Markdown 也带图链接与出处；
+- 真实链路（机器人战队选题）：6 张全部命中「水下机器人调试 / 水池测试 / 携横幅合影」等真图，取图 200 `image/jpeg` 81KB，未知 id 404。
+
 **校稿台 `#/desk`**
 
 - 三栏：正文（命中标红、行号对齐）→ 问题清单（错误 / 警告 / 已忽略，j/k 导航）→ 依据（规则原文 + 出处）；
@@ -157,7 +168,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 81 个（Vitest + Testing Library，含写文章页 9 项），后端 139 个（pytest，含文章生成 19 项 + 文体模板 14 项 + 语义检索 15 项）；单测默认关闭本地 embedding、用假向量注入，不依赖模型下载；
+- 测试：前端 83 个（Vitest + Testing Library，含写文章页 11 项），后端 155 个（pytest，含文章生成 19 项 + 文体模板 14 项 + 配图推荐 16 项 + 语义检索 15 项）；单测默认关闭本地 embedding、用假向量注入，不依赖模型下载；
 - 运行时依赖只有 React 本体 + FastAPI（docx 解析用 `python-docx`，文件上传用 `python-multipart`，AI 问答用 `httpx` + `pydantic-settings`）。
 
 ## 7. 开发日志

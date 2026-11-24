@@ -23,7 +23,7 @@ import httpx
 
 import checker
 
-from . import deepseek, styles, search as corpus_search
+from . import deepseek, figures, styles, search as corpus_search
 
 MAX_CONTEXT_BLOCKS = 24   # 交给模型的素材块上限（控制 token）
 MAX_PER_QUERY = 6         # 每个检索词取多少行
@@ -330,6 +330,29 @@ async def _call_model_json(
             await http.aclose()
 
 
+def attach_figures(article: dict) -> list[dict]:
+    """从往期推文的真实照片里给每节配图；索引没建就当没有，不影响出稿。"""
+    try:
+        return figures.recommend(article.get("sections") or [])
+    except figures.FigureIndexMissing:
+        return []
+
+
+def figures_to_markdown(figs: list[dict]) -> str:
+    """导出的 Markdown 里带上真图链接与来源，方便按顺序贴进公众号后台。"""
+    if not figs:
+        return ""
+    lines = ["---\n### 可用配图（来自往期推文，请自行确认是否适用）\n"]
+    for f in figs:
+        warn = "（关联度一般，需人工确认）" if f.get("weak") else ""
+        lines.append(
+            f"- 第{f['sectionIndex'] + 1}节「{f['sectionHeading']}」："
+            f"![{f['caption']}]({f['url']}) {f['caption']}{warn}"
+            f"　来源：《{f['sourceTitle']}》{f['sourcePublished']}"
+        )
+    return "\n".join(lines) + "\n"
+
+
 async def compose_article(
     topic: str,
     rules: list[dict],
@@ -353,16 +376,18 @@ async def compose_article(
 
     cites = check_citations(article, blocks)
     review = review_article(article, rules)
+    figs = attach_figures(article)
     return {
         "topic": topic,
         "article": article,
-        "markdown": article_to_markdown(article),
+        "markdown": article_to_markdown(article) + figures_to_markdown(figs),
         "sources": blocks,
         "rules": rule_items,
         "meta": meta,
         "citations": cites,
         "review": review,
         "style": styles.style_meta(spec, style),
+        "figures": figs,
         "model": cfg.deepseek_model,
     }
 
@@ -404,16 +429,18 @@ async def revise_article(
 
     cites = check_citations(revised, blocks)
     review = review_article(revised, rules)
+    figs = attach_figures(revised)
     return {
         "topic": topic,
         "instruction": instruction,
         "article": revised,
-        "markdown": article_to_markdown(revised),
+        "markdown": article_to_markdown(revised) + figures_to_markdown(figs),
         "sources": blocks,
         "rules": rule_items,
         "meta": {"terms": [], "scanned": 0, "revised": True},
         "citations": cites,
         "review": review,
         "style": styles.style_meta(spec, style),
+        "figures": figs,
         "model": cfg.deepseek_model,
     }

@@ -2,6 +2,7 @@ import { useRef, useState } from 'react';
 import {
   postCompose,
   postRevise,
+  type ComposeFigure,
   type ComposeResult,
   type ComposeSource,
   type ComposeStyleId,
@@ -81,6 +82,40 @@ type State =
   | { kind: 'loading' }
   | { kind: 'done'; versions: ComposeResult[]; index: number; draftId: string }
   | { kind: 'error'; message: string };
+
+const KIND_LABEL: Record<string, string> = {
+  scene: '实景',
+  crowd: '合影',
+  chart: '图表',
+  poster: '海报',
+};
+
+/** 每节末尾的可用配图：真图 + 出处，点下载能直接拿到文件。 */
+function FigureStrip({ items }: { items: readonly ComposeFigure[] }) {
+  if (items.length === 0) return null;
+  return (
+    <div className={s.figs}>
+      {items.map((f) => (
+        <figure className={s.fig} key={f.id}>
+          <img className={s.figImg} src={f.url} alt={f.caption} loading="lazy" />
+          <figcaption className={s.figCap}>
+            <span className={s.figTag}>{KIND_LABEL[f.kind] ?? f.kind}</span>
+            {f.caption}
+            {f.weak && <span className={s.figWeak}>关联度一般，请确认</span>}
+          </figcaption>
+          <div className={s.figFoot}>
+            <span className={s.figSrc}>
+              《{f.sourceTitle}》{f.sourcePublished}
+            </span>
+            <a className={s.figDl} href={f.url} download>
+              下载
+            </a>
+          </div>
+        </figure>
+      ))}
+    </div>
+  );
+}
 
 function sourceLine(source: ComposeSource): string {
   return `${source.file}${source.line ? ` · 第 ${source.line} 行` : ''}`;
@@ -335,6 +370,11 @@ export default function Compose() {
                 >
                   规范检查 {current.review.counts.error} 错 / {current.review.counts.warn} 警
                 </span>
+                {(current.figures?.length ?? 0) > 0 && (
+                  <span className={`${s.badge} ${s.badgeOk}`}>
+                    配图 {current.figures?.length} 张可选
+                  </span>
+                )}
                 <span className={s.spacer} />
                 <button type="button" className={s.copyBtn} onClick={() => void copyMarkdown()}>
                   {copied ? '已复制' : '复制 Markdown'}
@@ -373,24 +413,28 @@ export default function Compose() {
                 )}
                 {current.article.lead && <p className={s.lead}>{current.article.lead}</p>}
 
-                {current.article.sections.map((sec, si) => (
-                  <section className={s.sec} key={`${si}-${sec.heading}`}>
-                    {sec.heading && <h3 className={s.secHeading}>{sec.heading}</h3>}
-                    {sec.paragraphs.map((p, pi) => {
-                      const isPlaceholder = p.text.startsWith('（素材不足');
-                      return (
-                        <p className={`${s.para} ${isPlaceholder ? s.placeholder : ''}`} key={pi}>
-                          {p.text}
-                          {p.cites.map((c) => (
-                            <span className={s.cite} key={c}>
-                              [{c}]
-                            </span>
-                          ))}
-                        </p>
-                      );
-                    })}
-                  </section>
-                ))}
+                {current.article.sections.map((sec, si) => {
+                  const figs = (current.figures ?? []).filter((f) => f.sectionIndex === si);
+                  return (
+                    <section className={s.sec} key={`${si}-${sec.heading}`}>
+                      {sec.heading && <h3 className={s.secHeading}>{sec.heading}</h3>}
+                      {sec.paragraphs.map((p, pi) => {
+                        const isPlaceholder = p.text.startsWith('（素材不足');
+                        return (
+                          <p className={`${s.para} ${isPlaceholder ? s.placeholder : ''}`} key={pi}>
+                            {p.text}
+                            {p.cites.map((c) => (
+                              <span className={s.cite} key={c}>
+                                [{c}]
+                              </span>
+                            ))}
+                          </p>
+                        );
+                      })}
+                      <FigureStrip items={figs} />
+                    </section>
+                  );
+                })}
 
                 {current.article.imageSuggestions.length > 0 && (
                   <div className={s.images}>

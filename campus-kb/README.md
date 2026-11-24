@@ -29,7 +29,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 139 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、语义检索 15 项
+uv run pytest                                             # 155 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、配图推荐 16 项、语义检索 15 项
 ```
 
 | 接口 | 说明 |
@@ -42,6 +42,8 @@ uv run pytest                                             # 139 个用例，含 
 | `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
 | `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
 | `POST /api/compose` | `{ topic, style? }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
+| `GET /api/figure/{id}` | → 图片二进制；成稿返回的 `figures[].url` 就指向这里。索引缺失或文件被删返回 404，前端显示占位 |
+| `GET /api/figures/stats` | → `{ total, kinds }`，确认配图库状态 |
 | `POST /api/compose/revise` | `{ topic, instruction, article, sources[], rules[], style? }` → 同 compose 结构 + `instruction`；改稿：前端把上一版草稿与 `A#` 素材原样回传，服务端无状态、**不重新检索**（否则正文引用会指向别处），只按指令改被点名的部分，改完重跑引用核对 + `archive` 发前检查；模型输出不可解析时保留原稿 |
 
 AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat`、`/api/agent`、`/api/compose`、`/api/compose/revise` 不可用，其他接口不受影响。
@@ -59,6 +61,33 @@ AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可�
 `style` 缺省 `auto`：按选题关键词路由，致辞类优先判定，其次喜讯类，其余落新闻；
 显式指定永远优先（选题里有「喜讯」也按用户点的新闻写）；未知值按 `auto` 处理，不返回 422。
 文体块同时注入成稿与改稿的 system prompt——改稿不带文体，模型容易把致辞改成新闻腔。
+
+## 配图推荐（api/figures.py）
+
+成稿只给「建议配什么图」不够用——文章要真能发出去得有照片。语料里 24 篇推文已经
+把原图整篇扒下来了（657 张），这里把它们变成可检索的图库。
+
+```bash
+uv run python tools/build_figure_index.py    # 过滤碎图 + 按字节去重 → 177 张真配图
+uv run python tools/make_contact_sheets.py   # 拼 20 张九宫格
+# 逐格标注（一句话描述 + 图像性质）→ corpus/images/captions.raw.json
+uv run python tools/apply_captions.py        # 回填进 INDEX.json
+```
+
+- 过滤阈值：宽 ≥600、高 ≥400、体积 ≥40KB，去动图。公众号正文里混着 1080x92 分隔线、
+  1KB 的 400x400 占位块、表情动图，不滤掉会被当成配图推出去；657 → 177（另去重 116 张）；
+- 标注分 8 类：`scene` 实景 50 / `portrait` 肖像 41 / `crowd` 合影 29 / `poster` 海报 24 /
+  `chart` 图表 17 / `slide` 长图分段 11 / `qr` 二维码 3 / `icon` logo 2，可推 120 张；
+- **肖像不推**：真实师生单人照涉及肖像权，系统不替编辑做决定；`slide`（招生长图的
+  「PART 1/2/3」）、`qr`、`icon` 永不推；
+- 打分 = `(0.7 × 图注相关度 + 0.3 × 来源文章相关度) × 性质权重`（实景 1.0 / 合影 0.9 /
+  图表 0.75 / 海报 0.65）。图注与段落至少共享 **2 个 2-gram** 才算真命中——只共享
+  「全国」这种常见词会把同篇推文里无关的合影认成相关图；只靠来源标题蹭到分的标 `weak`，
+  整节没有任何真命中时才补一张并标注「关联度一般，请确认」；
+- 全篇不重复用同一张；分数低于 0.5 宁可不配图。
+
+索引 `corpus/images/INDEX.json` 与图片本体都在 `corpus/`（含真实师生影像，已 gitignore），
+只在本机存在：换机器要重跑建库脚本，标注需重新做。
 
 ## 语义检索（api/rag.py）
 
@@ -183,7 +212,7 @@ swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 g
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
-├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py 成稿/改稿 + styles.py 文体模板 + search.py + rag.py 混合检索）
+├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py 成稿/改稿 + styles.py 文体模板 + figures.py 配图推荐 + search.py + rag.py 混合检索）
 ├── tools/                  # 本地工具：文章抓取（fetch_wechat.py）+ 列表采集（collect_links.js）+ Vision OCR（ocr.swift）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文
@@ -234,12 +263,15 @@ campus-kb/
 
 ## 已知限制
 
-- 只做**文本规则**，不判断内容事实是否属实、图片是否合规（这两类仍需人工）。
+- 规则只做**文本规则**，不判断内容事实是否属实、图片是否合规（这两类仍需人工）。
 - 中文分词靠正则，遇到长句中的职务简称（如「段校长」）可能漏判，目前靠人名 + 窗口匹配兜底。
-- `layout.json` 只是排版参数，尚未接入文档生成。
+- 配图库只在本地：图片与索引都在 `corpus/`（真实师生影像，不入库），换机器需重跑建库 + 重新标注。
+- 配图推荐靠图注文字匹配，图库没覆盖的主题（如新活动）会返回空——设计上宁可空着，不拿不相关的图凑数。
 
 ## 下一步
 
-1. **P1 生成**：按 `layout.json` + 报送模板，输入要点直接产出符合字体的初稿。
-2. **P2 入库**：把原始 Word/PDF 解析后入 WorkBuddy 资料库，支持「这条规范怎么写的」问答并带出处。
-3. **P3 闭环**：投稿平台审核不通过的原因回流，自动补充规则。
+1. **排版导出**：公众号编辑器只认内联样式，现在是 Markdown。按往期推文的版式产出一份可直接粘贴的
+   HTML（段落缩进、行距、小标题样式、图片占位），把「复制到后台还要手动排版」这一步省掉。
+2. **图注可用性**：现在 177 张图的描述是一次性标注的，新增推文要靠人工再过一遍；
+   可以把拼图 + 视觉识别做成半自动流程。
+3. **多稿对比**：同选题跑 2–3 版挑一版，或让编辑在两条改稿路径里选。

@@ -222,6 +222,24 @@ export interface ComposeStyle {
   readonly auto: boolean;
 }
 
+/** 往期推文里的真实配图（后端从图库挑的，不是模型编的配图建议） */
+export interface ComposeFigure {
+  readonly id: string;
+  readonly url: string;
+  readonly caption: string;
+  /** scene 实景 / crowd 合影 / chart 图表截图 / poster 海报长图 */
+  readonly kind: string;
+  readonly width: number;
+  readonly height: number;
+  readonly sourceTitle: string;
+  readonly sourcePublished: string;
+  readonly sectionIndex: number;
+  readonly sectionHeading: string;
+  readonly score: number;
+  /** true 表示只跟来源文章相关、图注对不上，需人工确认 */
+  readonly weak: boolean;
+}
+
 export interface ComposeResult {
   readonly topic: string;
   readonly article: ComposeArticle;
@@ -252,6 +270,7 @@ export interface ComposeResult {
     }[];
   };
   readonly style: ComposeStyle;
+  readonly figures?: readonly ComposeFigure[];
   readonly model: string;
 }
 

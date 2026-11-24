@@ -153,6 +153,23 @@ class ComposeReview(BaseModel):
     findings: list[dict]
 
 
+class ComposeFigure(BaseModel):
+    """从往期推文里挑出的真实配图（不是模型编的配图建议）。"""
+
+    id: str
+    url: str
+    caption: str
+    kind: str = Field(description="scene 实景 / crowd 合影 / chart 图表截图 / poster 海报长图")
+    width: int
+    height: int
+    sourceTitle: str = Field(description="图片来源的往期推文标题")
+    sourcePublished: str
+    sectionIndex: int = Field(description="建议插在第几节（0 起）")
+    sectionHeading: str
+    score: float
+    weak: bool = Field(description="true 表示只靠来源文章相关、图注对不上，需人工确认")
+
+
 class ComposeResponse(BaseModel):
     topic: str
     article: ComposeArticle
@@ -163,6 +180,7 @@ class ComposeResponse(BaseModel):
     citations: ComposeCitationReport
     review: ComposeReview
     style: dict
+    figures: list[ComposeFigure] = Field(default_factory=list)
     model: str
 
 
