@@ -29,7 +29,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 109 个用例，含 bad 17 / good 0 基线、文章生成 15 项、语义检索 15 项
+uv run pytest                                             # 125 个用例，含 bad 17 / good 0 基线、文章生成 19 项、语义检索 15 项
 ```
 
 | 接口 | 说明 |
@@ -42,8 +42,9 @@ uv run pytest                                             # 109 个用例，含 
 | `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
 | `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
 | `POST /api/compose` | `{ topic }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
+| `POST /api/compose/revise` | `{ topic, instruction, article, sources[], rules[] }` → 同 compose 结构 + `instruction`；改稿：前端把上一版草稿与 `A#` 素材原样回传，服务端无状态、**不重新检索**（否则正文引用会指向别处），只按指令改被点名的部分，改完重跑引用核对 + `archive` 发前检查；模型输出不可解析时保留原稿 |
 
-AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat`、`/api/agent`、`/api/compose` 不可用，其他接口不受影响。
+AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat`、`/api/agent`、`/api/compose`、`/api/compose/revise` 不可用，其他接口不受影响。
 
 ## 语义检索（api/rag.py）
 

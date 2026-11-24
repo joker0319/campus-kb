@@ -22,7 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 import checker  # noqa: E402  # sys.path 调整必须在前
 from . import agent  # noqa: E402
 from . import deepseek  # noqa: E402
-from .compose import compose_article  # noqa: E402
+from .compose import compose_article, revise_article  # noqa: E402
 from . import docx_io  # noqa: E402
 from . import search as corpus_search  # noqa: E402
 
@@ -38,6 +38,8 @@ from .schemas import (  # noqa: E402
     ReviewFileResponse,
     ReviewRequest,
     ReviewResponse,
+    ReviseRequest,
+    ReviseResponse,
     RuleOut,
     RulesResponse,
 )
@@ -241,3 +243,26 @@ async def compose(req: ComposeRequest, engine: EngineDep) -> ComposeResponse:
     except deepseek.DeepSeekUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
     return ComposeResponse(**result)
+
+
+@app.post("/api/compose/revise")
+async def revise(req: ReviseRequest, engine: EngineDep) -> ReviseResponse:
+    """改稿：在已有草稿上按指令继续改，沿用原素材编号，只重跑出处与规范检查。
+
+    无状态设计——上一版 article 与 sources 由前端带回，服务端不缓存草稿。
+    未配置密钥 503；上游失败 502。
+    """
+    try:
+        result = await revise_article(
+            req.topic,
+            req.article,
+            req.instruction,
+            [s.model_dump() for s in req.sources],
+            req.rules,
+            engine[0],
+        )
+    except deepseek.DeepSeekNotConfigured as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except deepseek.DeepSeekUnavailable as exc:
+        raise HTTPException(status_code=502, detail=str(exc)) from exc
+    return ReviseResponse(**result)

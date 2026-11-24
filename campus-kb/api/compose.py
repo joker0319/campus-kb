@@ -37,7 +37,7 @@ COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处�
 2. 素材库里没有的事实、数字、人名、日期一律不许写；宁可少写，不要编造或用常识补全。
 3. 如果素材不足以支撑某个部分，在该部分写「（素材不足，待补充）」，不要虚构。
 4. 语言符合公众号文风：标题抓人但不夸张，导语短，正文分小标题，段落简洁。
-5. 遵守给出的【写作规范】：校名首次全称、中文全角标点等。
+5. 遵守给出的【写作规范】：标题与正文中校名首次出现写全称「香港城市大学（东莞）」，不要用「港城大」这类简称；中文用全角标点。
 6. 输出严格的 JSON（不要 markdown 代码块），结构如下：
 {
   "title": "文章标题",
@@ -50,6 +50,20 @@ COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处�
   "imageSuggestions": [{"after": "小标题或段落序号", "description": "建议配图内容"}]
 }
 7. cites 数组里只能填【素材库】中真实存在的编号；没有依据的段落 cites 留空并把 text 写为「（素材不足，待补充）」。
+"""
+
+REVISE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的公众号编辑，正在修改一篇已成型草稿。
+任务：只按【修改指令】调整【当前草稿】，其余内容原样保留。
+
+硬性要求：
+1. 素材编号 A# 与当前草稿一致，cites 只能引用【素材库】里真实存在的编号，不许编新编号。
+2. 不许引入素材库之外的事实、数字、人名、日期；原稿没有的事实依然不许补。
+3. 指令没提到的标题、小标题、段落、配图建议逐字保留，不要顺手润色或重排结构。
+4. 按指令需要拆并段落时，cites 跟随内容迁移，不要丢失出处。
+5. 输出完整的文章 JSON（不要 markdown 代码块），结构与当前草稿完全一致：
+{"title": "", "lead": "", "sections": [{"heading": "", "paragraphs": [{"text": "", "cites": []}]}], "imageSuggestions": [{"after": "", "description": ""}]}
+6. 遵守【写作规范】与【口径约束】；标题与正文里校名首次出现写全称「香港城市大学（东莞）」，
+   不要为了标题简短改成「港城大」等简称。
 """
 
 
@@ -280,6 +294,42 @@ def article_to_markdown(article: dict) -> str:
     return "\n".join(lines).strip() + "\n"
 
 
+async def _call_model_json(
+    cfg: deepseek.Settings,
+    system_prompt: str,
+    user_prompt: str,
+    client: httpx.AsyncClient | None,
+) -> dict:
+    """一次 JSON 模式成稿调用；失败统一转 DeepSeekUnavailable。"""
+    url = f"{cfg.deepseek_base_url.rstrip('/')}/chat/completions"
+    owns_client = client is None
+    http = client or httpx.AsyncClient(timeout=120)
+    try:
+        response = await http.post(
+            url,
+            headers={"Authorization": f"Bearer {cfg.deepseek_api_key}", "Content-Type": "application/json"},
+            json={
+                "model": cfg.deepseek_model,
+                "messages": [
+                    {"role": "system", "content": system_prompt},
+                    {"role": "user", "content": user_prompt},
+                ],
+                "temperature": 0.3,
+                "stream": False,
+                "response_format": {"type": "json_object"},
+            },
+        )
+        response.raise_for_status()
+        data = response.json()
+        content = data["choices"][0]["message"].get("content") or ""
+        return parse_article(content)
+    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
+        raise deepseek.DeepSeekUnavailable(f"文章生成调用失败：{exc}") from exc
+    finally:
+        if owns_client:
+            await http.aclose()
+
+
 async def compose_article(
     topic: str,
     rules: list[dict],
@@ -295,33 +345,7 @@ async def compose_article(
     context = build_context(blocks, rule_items)
     user_prompt = f"请围绕选题写公众号文章草稿。\n选题：{topic}\n\n{context}"
 
-    url = f"{cfg.deepseek_base_url.rstrip('/')}/chat/completions"
-    owns_client = client is None
-    http = client or httpx.AsyncClient(timeout=120)
-    try:
-        response = await http.post(
-            url,
-            headers={"Authorization": f"Bearer {cfg.deepseek_api_key}", "Content-Type": "application/json"},
-            json={
-                "model": cfg.deepseek_model,
-                "messages": [
-                    {"role": "system", "content": COMPOSE_SYSTEM_PROMPT},
-                    {"role": "user", "content": user_prompt},
-                ],
-                "temperature": 0.3,
-                "stream": False,
-                "response_format": {"type": "json_object"},
-            },
-        )
-        response.raise_for_status()
-        data = response.json()
-        content = data["choices"][0]["message"].get("content") or ""
-        article = parse_article(content)
-    except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
-        raise deepseek.DeepSeekUnavailable(f"文章生成调用失败：{exc}") from exc
-    finally:
-        if owns_client:
-            await http.aclose()
+    article = await _call_model_json(cfg, COMPOSE_SYSTEM_PROMPT, user_prompt, client)
 
     cites = check_citations(article, blocks)
     review = review_article(article, rules)
@@ -332,6 +356,53 @@ async def compose_article(
         "sources": blocks,
         "rules": rule_items,
         "meta": meta,
+        "citations": cites,
+        "review": review,
+        "model": cfg.deepseek_model,
+    }
+
+
+async def revise_article(
+    topic: str,
+    article: dict,
+    instruction: str,
+    blocks: list[dict],
+    rule_items: list[dict],
+    rules: list[dict],
+    settings: deepseek.Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> dict:
+    """在已有草稿上按指令改稿：素材编号与出处不变，只重跑引用与规范校验。
+
+    不复用 gather_material：改稿要沿用同一批编号素材，重新检索会让正文里的
+    [A3] 指到别的内容，引用核对随即失真。
+    """
+    cfg = settings or deepseek.get_settings()
+    if not cfg.configured:
+        raise deepseek.DeepSeekNotConfigured("未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥")
+
+    context = build_context(blocks, rule_items)
+    user_prompt = (
+        f"【修改指令】{instruction}\n\n"
+        f"【当前草稿】\n{json.dumps(article, ensure_ascii=False, indent=2)}\n\n"
+        f"{context}"
+    )
+
+    revised = await _call_model_json(cfg, REVISE_SYSTEM_PROMPT, user_prompt, client)
+    # 模型偶发返回空结构：保留原稿，不要拿空白覆盖用户已认可的版本
+    if not revised.get("sections"):
+        revised = {**article, "sections": article.get("sections", [])}
+
+    cites = check_citations(revised, blocks)
+    review = review_article(revised, rules)
+    return {
+        "topic": topic,
+        "instruction": instruction,
+        "article": revised,
+        "markdown": article_to_markdown(revised),
+        "sources": blocks,
+        "rules": rule_items,
+        "meta": {"terms": [], "scanned": 0, "revised": True},
         "citations": cites,
         "review": review,
         "model": cfg.deepseek_model,

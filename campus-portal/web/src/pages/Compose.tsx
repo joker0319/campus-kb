@@ -1,5 +1,5 @@
 import { useRef, useState } from 'react';
-import { postCompose, type ComposeResult, type ComposeSource } from '../lib/api';
+import { postCompose, postRevise, type ComposeResult, type ComposeSource } from '../lib/api';
 import s from '../styles/compose.module.css';
 
 const SUGGESTIONS = [
@@ -8,32 +8,101 @@ const SUGGESTIONS = [
   '根据往期推文，写一篇校园心理健康关怀的文章',
 ];
 
+const QUICK_EDITS = [
+  '标题再短一点',
+  '标题更抓人',
+  '整体更简洁',
+  '把第二部分展开',
+  '改成新闻体',
+  '语气更温暖',
+];
+
+const DRAFTS_KEY = 'campus.drafts.v1';
+const MAX_DRAFTS = 5;
+const MAX_VERSIONS = 4;
+
+/** 本地草稿：只留最新一版（含素材），版本对比是会话内的能力。 */
+interface Draft {
+  id: string;
+  at: number;
+  topic: string;
+  result: ComposeResult;
+}
+
+function loadDrafts(): Draft[] {
+  try {
+    const raw = window.localStorage.getItem(DRAFTS_KEY);
+    const parsed = raw ? (JSON.parse(raw) as unknown) : null;
+    return Array.isArray(parsed) ? (parsed as Draft[]).filter((d) => d && d.result) : [];
+  } catch {
+    return [];
+  }
+}
+
+function persistDrafts(list: Draft[]): Draft[] {
+  try {
+    window.localStorage.setItem(DRAFTS_KEY, JSON.stringify(list));
+  } catch {
+    // 存满了也不影响出稿：降级为本次会话内可用
+  }
+  return list;
+}
+
+/** 时间戳只在事件回调里取；包一层，避免被当成渲染期调用。 */
+function now(): number {
+  return Date.now();
+}
+
+function newDraftId(): string {
+  return `d${now()}`;
+}
+
+function timeLabel(at: number): string {
+  const d = new Date(at);
+  const pad = (n: number) => String(n).padStart(2, '0');
+  return `${d.getMonth() + 1}/${pad(d.getDate())} ${pad(d.getHours())}:${pad(d.getMinutes())}`;
+}
+
 type State =
   | { kind: 'idle' }
   | { kind: 'loading' }
-  | { kind: 'done'; result: ComposeResult }
+  | { kind: 'done'; versions: ComposeResult[]; index: number; draftId: string }
   | { kind: 'error'; message: string };
 
 function sourceLine(source: ComposeSource): string {
   return `${source.file}${source.line ? ` · 第 ${source.line} 行` : ''}`;
 }
 
-/** 写文章页：输入选题 → 检索知识库成稿 → 展示可溯源草稿并导出。 */
+/** 写文章页：选题 → 检索成稿 → 继续改 → 版本回看 → 导出。 */
 export default function Compose() {
   const [topic, setTopic] = useState('');
   const [state, setState] = useState<State>({ kind: 'idle' });
   const [copied, setCopied] = useState(false);
+  const [instruction, setInstruction] = useState('');
+  const [revising, setRevising] = useState(false);
+  const [drafts, setDrafts] = useState<Draft[]>(loadDrafts);
+  const [showDrafts, setShowDrafts] = useState(false);
   const resultRef = useRef<HTMLDivElement | null>(null);
+
+  const current = state.kind === 'done' ? state.versions[state.index] : null;
+  const busy = state.kind === 'loading';
 
   const generate = async (value: string) => {
     const clean = value.trim();
     if (clean.length < 2) return;
     setState({ kind: 'loading' });
     setCopied(false);
+    setInstruction('');
     resultRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     try {
       const result = await postCompose(clean);
-      setState({ kind: 'done', result });
+      const draftId = newDraftId();
+      setState({ kind: 'done', versions: [result], index: 0, draftId });
+      setDrafts((prev) =>
+        persistDrafts(
+          [{ id: draftId, at: now(), topic: clean, result }, ...prev].slice(0, MAX_DRAFTS),
+        ),
+      );
     } catch (err: unknown) {
       setState({
         kind: 'error',
@@ -42,10 +111,57 @@ export default function Compose() {
     }
   };
 
-  const copyMarkdown = async () => {
+  const revise = async (text: string) => {
     if (state.kind !== 'done') return;
+    const clean = text.trim();
+    if (!clean) return;
+    const base = state.versions[state.index];
+    if (!base) return;
+    setRevising(true);
     try {
-      await navigator.clipboard.writeText(state.result.markdown);
+      const next = await postRevise({
+        topic: base.topic,
+        instruction: clean,
+        article: base.article,
+        sources: base.sources,
+        rules: base.rules,
+      });
+      const versions = [...state.versions.slice(0, state.index + 1), next].slice(-MAX_VERSIONS);
+      const index = versions.length - 1;
+      setState({ kind: 'done', versions, index, draftId: state.draftId });
+      setDrafts((prev) =>
+        prev.map((d) => (d.id === state.draftId ? { ...d, at: now(), result: next } : d)),
+      );
+      setInstruction('');
+    } catch (err: unknown) {
+      setState({
+        kind: 'error',
+        message: err instanceof Error ? err.message : '改稿失败，请稍后重试',
+      });
+    } finally {
+      setRevising(false);
+    }
+  };
+
+  const openDraft = (d: Draft) => {
+    setTopic(d.topic);
+    setInstruction('');
+    setShowDrafts(false);
+    setState({ kind: 'done', versions: [d.result], index: 0, draftId: d.id });
+    window.setTimeout(
+      () => resultRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' }),
+      0,
+    );
+  };
+
+  const removeDraft = (id: string) => {
+    setDrafts((prev) => persistDrafts(prev.filter((d) => d.id !== id)));
+  };
+
+  const copyMarkdown = async () => {
+    if (!current) return;
+    try {
+      await navigator.clipboard.writeText(current.markdown);
       setCopied(true);
       window.setTimeout(() => setCopied(false), 2000);
     } catch {
@@ -54,17 +170,15 @@ export default function Compose() {
   };
 
   const downloadMarkdown = () => {
-    if (state.kind !== 'done') return;
-    const blob = new Blob([state.result.markdown], { type: 'text/markdown;charset=utf-8' });
+    if (!current) return;
+    const blob = new Blob([current.markdown], { type: 'text/markdown;charset=utf-8' });
     const url = URL.createObjectURL(blob);
     const a = document.createElement('a');
     a.href = url;
-    a.download = `${state.result.article.title || '公众号文章草稿'}.md`;
+    a.download = `${current.article.title || '公众号文章草稿'}.md`;
     a.click();
     URL.revokeObjectURL(url);
   };
-
-  const busy = state.kind === 'loading';
 
   return (
     <div className={s.page}>
@@ -73,6 +187,14 @@ export default function Compose() {
           ← 返回首页
         </a>
         <span className={s.barName}>写文章</span>
+        <button
+          type="button"
+          className={s.draftBtn}
+          onClick={() => setShowDrafts((v) => !v)}
+          aria-expanded={showDrafts}
+        >
+          草稿箱{drafts.length > 0 ? ` · ${drafts.length}` : ''}
+        </button>
         <span className={s.barTag}>RAG 知识库 · Agent 成稿 · 出处可溯</span>
       </header>
 
@@ -84,9 +206,35 @@ export default function Compose() {
             <p className={s.lede}>
               助手从规范、档案与往期推文中检索素材，据此写成公众号草稿。
               <br />
-              每段都带出处；查不到依据的地方会明确标注，不臆测。
+              不满意就直接说怎么改，它会在原稿上改，不重新编素材。
             </p>
           </div>
+
+          {showDrafts && (
+            <div className={s.drafts}>
+              <div className={s.draftsHead}>
+                <span>本地草稿</span>
+                <span className={s.draftsHint}>保存在这台设备，刷新不丢</span>
+              </div>
+              {drafts.length === 0 && <p className={s.draftsEmpty}>还没有草稿，先写一篇。</p>}
+              {drafts.map((d) => (
+                <div className={s.draftItem} key={d.id}>
+                  <button type="button" className={s.draftOpen} onClick={() => openDraft(d)}>
+                    <span className={s.draftTopic}>{d.topic}</span>
+                    <span className={s.draftMeta}>{timeLabel(d.at)}</span>
+                  </button>
+                  <button
+                    type="button"
+                    className={s.draftDel}
+                    onClick={() => removeDraft(d.id)}
+                    aria-label={`删除草稿 ${d.topic}`}
+                  >
+                    删除
+                  </button>
+                </div>
+              ))}
+            </div>
+          )}
 
           <div className={s.inputCard}>
             <label className={s.label} htmlFor="compose-topic">
@@ -138,22 +286,21 @@ export default function Compose() {
             </div>
           )}
 
-          {state.kind === 'done' && (
+          {state.kind === 'done' && current && (
             <div className={s.result} ref={resultRef}>
               <div className={s.resultBar}>
                 <span className={s.resultTitle}>草稿预览</span>
                 <span
-                  className={`${s.badge} ${state.result.citations.grounded ? s.badgeOk : s.badgeWarn}`}
+                  className={`${s.badge} ${current.citations.grounded ? s.badgeOk : s.badgeWarn}`}
                 >
-                  {state.result.citations.grounded
+                  {current.citations.grounded
                     ? '全部段落有出处'
-                    : `${state.result.citations.uncitedParagraphs} 段待补充`}
+                    : `${current.citations.uncitedParagraphs} 段待补充`}
                 </span>
                 <span
-                  className={`${s.badge} ${state.result.review.counts.error === 0 ? s.badgeOk : s.badgeWarn}`}
+                  className={`${s.badge} ${current.review.counts.error === 0 ? s.badgeOk : s.badgeWarn}`}
                 >
-                  规范检查 {state.result.review.counts.error} 错 / {state.result.review.counts.warn}{' '}
-                  警
+                  规范检查 {current.review.counts.error} 错 / {current.review.counts.warn} 警
                 </span>
                 <span className={s.spacer} />
                 <button type="button" className={s.copyBtn} onClick={() => void copyMarkdown()}>
@@ -164,13 +311,36 @@ export default function Compose() {
                 </button>
               </div>
 
-              <article className={s.article}>
-                {state.result.article.title && (
-                  <h2 className={s.articleTitle}>{state.result.article.title}</h2>
-                )}
-                {state.result.article.lead && <p className={s.lead}>{state.result.article.lead}</p>}
+              {state.versions.length > 1 && (
+                <div className={s.versionBar}>
+                  <span className={s.versionLabel}>版本</span>
+                  {state.versions.map((_, i) => (
+                    <button
+                      type="button"
+                      key={i}
+                      className={`${s.versionBtn} ${i === state.index ? s.versionOn : ''}`}
+                      onClick={() =>
+                        setState((prev) => (prev.kind === 'done' ? { ...prev, index: i } : prev))
+                      }
+                    >
+                      v{i + 1}
+                    </button>
+                  ))}
+                  <span className={s.versionHint}>
+                    {state.index < state.versions.length - 1
+                      ? '正在看历史版本，继续改会从这里分叉'
+                      : '最新一版'}
+                  </span>
+                </div>
+              )}
 
-                {state.result.article.sections.map((sec, si) => (
+              <article className={s.article}>
+                {current.article.title && (
+                  <h2 className={s.articleTitle}>{current.article.title}</h2>
+                )}
+                {current.article.lead && <p className={s.lead}>{current.article.lead}</p>}
+
+                {current.article.sections.map((sec, si) => (
                   <section className={s.sec} key={`${si}-${sec.heading}`}>
                     {sec.heading && <h3 className={s.secHeading}>{sec.heading}</h3>}
                     {sec.paragraphs.map((p, pi) => {
@@ -189,10 +359,10 @@ export default function Compose() {
                   </section>
                 ))}
 
-                {state.result.article.imageSuggestions.length > 0 && (
+                {current.article.imageSuggestions.length > 0 && (
                   <div className={s.images}>
                     <p className={s.imagesHead}>配图建议</p>
-                    {state.result.article.imageSuggestions.map((im, i) => (
+                    {current.article.imageSuggestions.map((im, i) => (
                       <p className={s.imageItem} key={i}>
                         {im.after && `${im.after}：`}
                         {im.description}
@@ -202,21 +372,62 @@ export default function Compose() {
                 )}
               </article>
 
+              <div className={s.revise}>
+                <div className={s.reviseHead}>
+                  <span className={s.reviseTitle}>继续改</span>
+                  <span className={s.reviseHint}>只改你点名的部分，素材编号不变</span>
+                </div>
+                <div className={s.reviseChips}>
+                  {QUICK_EDITS.map((q) => (
+                    <button
+                      type="button"
+                      key={q}
+                      className={s.reviseChip}
+                      disabled={revising}
+                      onClick={() => void revise(q)}
+                    >
+                      {q}
+                    </button>
+                  ))}
+                </div>
+                <div className={s.reviseRow}>
+                  <input
+                    className={s.reviseInput}
+                    value={instruction}
+                    onChange={(e) => setInstruction(e.target.value)}
+                    onKeyDown={(e) => {
+                      if (e.key === 'Enter') void revise(instruction);
+                    }}
+                    placeholder="例如：第三段太长，压缩到两句话"
+                    aria-label="修改要求输入框"
+                    disabled={revising}
+                  />
+                  <button
+                    type="button"
+                    className={s.reviseBtn}
+                    disabled={revising || !instruction.trim()}
+                    onClick={() => void revise(instruction)}
+                  >
+                    {revising ? '修改中…' : '按这条改'}
+                  </button>
+                </div>
+              </div>
+
               <div className={s.disclosures}>
                 <details className={s.disclosure}>
                   <summary className={s.dSummary}>
-                    事实依据 · {state.result.citations.cited.length} 条素材被引用
+                    事实依据 · {current.citations.cited.length} 条素材被引用
                   </summary>
                   <div className={s.dBody}>
-                    {state.result.citations.invalidCites.length > 0 && (
+                    {current.citations.invalidCites.length > 0 && (
                       <p className={s.findingItem}>
-                        无效引用：{state.result.citations.invalidCites.join('、')}
+                        无效引用：{current.citations.invalidCites.join('、')}
                       </p>
                     )}
-                    {state.result.citations.cited.length === 0 && (
+                    {current.citations.cited.length === 0 && (
                       <p className={s.empty}>没有段落引用到素材，请检查选题或更换表述。</p>
                     )}
-                    {state.result.citations.cited.map((src) => (
+                    {current.citations.cited.map((src) => (
                       <p className={s.sourceItem} key={src.ref}>
                         <span className={s.sourceRef}>[{src.ref}]</span>
                         {src.text}
@@ -228,13 +439,13 @@ export default function Compose() {
 
                 <details className={s.disclosure}>
                   <summary className={s.dSummary}>
-                    发前检查 · 规范命中 {state.result.review.findings.length} 项
+                    发前检查 · 规范命中 {current.review.findings.length} 项
                   </summary>
                   <div className={s.dBody}>
-                    {state.result.review.findings.length === 0 && (
+                    {current.review.findings.length === 0 && (
                       <p className={s.empty}>规则引擎未发现问题。</p>
                     )}
-                    {state.result.review.findings.map((f, i) => (
+                    {current.review.findings.map((f, i) => (
                       <p
                         className={`${s.findingItem} ${f.severity === 'error' ? s.findingError : s.findingWarn}`}
                         key={i}

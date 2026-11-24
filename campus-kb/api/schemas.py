@@ -159,3 +159,20 @@ class ComposeResponse(BaseModel):
     citations: ComposeCitationReport
     review: ComposeReview
     model: str
+
+
+class ReviseRequest(BaseModel):
+    """改稿请求：前端把上一版成稿连同素材编号一起回传，服务端无状态。
+
+    sources / rules 必须原样带回，否则正文里的 [A#] 会失去指向。
+    """
+
+    topic: str = Field(default="", max_length=400, description="原选题，用于回显")
+    instruction: str = Field(min_length=1, max_length=300, description="这次的修改要求")
+    article: dict = Field(description="当前草稿结构（title/lead/sections/imageSuggestions）")
+    sources: list[ComposeSource] = Field(default_factory=list)
+    rules: list[dict] = Field(default_factory=list)
+
+
+class ReviseResponse(ComposeResponse):
+    instruction: str

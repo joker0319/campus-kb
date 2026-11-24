@@ -30,8 +30,8 @@
 | --- | --- | --- |
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
 | RAG 语义检索 `api/rag.py` | ✅ 可用 | 50 份语料切成 771 个带起止行号的段落块；BM25（字符 2-gram）+ 本地 ONNX `bge-small-zh-v1.5` 向量，RRF 融合；模型缺失自动降级纯 BM25。向量索引按语料版本戳落盘，入库新文章自动重建 |
-| 文章生成 `#/compose` | ✅ 可用 | 输入选题 → 检索知识库 → DeepSeek 成结构化草稿（标题/导语/分节正文/配图建议）→ 后端校验每段出处 + 发前规范检查；无依据段落明确标注，不臆测。`POST /api/compose`，真实密钥端到端验证通过 |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成），109 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 文章生成 `#/compose` | ✅ 可用 | 输入选题 → 检索知识库 → DeepSeek 成结构化草稿（标题/导语/分节正文/配图建议）→ 后端校验每段出处 + 发前规范检查；成稿后可**继续下指令改稿**（沿用原素材编号、保留多版本可回看），草稿存本地刷新不丢；无依据段落明确标注，不臆测。`POST /api/compose` + `POST /api/compose/revise`，真实密钥端到端验证通过 |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/revise`（改稿），125 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 公众号语料入库 | ✅ 可用 | `campus-kb/tools/fetch_wechat.py` 抓自有公众号推文转 `corpus/text/*_WX.txt`，`_WX` 标记来源；文字型直接提取，长图型用 macOS Vision OCR（`tools/ocr.swift`，切片拼接识别）。入库即可被 `/api/search` 与 Agent 检索，无需重启 |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
@@ -121,6 +121,14 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - 前端展示草稿 + 每段引用标记 + 配图建议；「事实依据」列出被引用素材的文件与行号，可回溯；「发前检查」列规范命中；可复制/下载 Markdown；
 - `POST /api/compose`：未配置密钥 503、上游失败 502。真实密钥端到端验证：产出标题/导语/3 节正文/3 条配图建议，`grounded=True`（所有段落有出处），发前检查 0 误报。
 
+**改稿 `POST /api/compose/revise`**
+
+- 一次成稿很难直接发，所以成稿后可以继续说怎么改：点快捷指令（标题更短 / 更抓人 / 更简洁 / 展开某部分 / 改成新闻体 / 语气更暖）或自己写要求；
+- **不重新检索**——前端把上一版 `article` 连同 `sources`（`A#` 素材块）与 `rules` 原样回传，服务端无状态。重新检索会让正文里的 `[A3]` 指到别的内容，引用核对随即失真；
+- 改完只重跑两件事：引用编号核对 + `archive` 模式的发前检查；结构完整保留时 `grounded` 仍为 `True`；
+- 模型返回不可解析内容时**保留原稿**，不拿空白覆盖用户已认可的版本；
+- 前端保留最近 4 个版本可切换回看（在历史版本上继续改会从该版本分叉）；草稿存 `localStorage`（最多 5 篇，只留最新一版），刷新不丢。
+
 **校稿台 `#/desk`**
 
 - 三栏：正文（命中标红、行号对齐）→ 问题清单（错误 / 警告 / 已忽略，j/k 导航）→ 依据（规则原文 + 出处）；
@@ -139,7 +147,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 72 个（Vitest + Testing Library，含写文章页 4 项），后端 109 个（pytest，含文章生成 15 项 + 语义检索 15 项）；单测默认关闭本地 embedding、用假向量注入，不依赖模型下载；
+- 测试：前端 79 个（Vitest + Testing Library，含写文章页 7 项），后端 125 个（pytest，含文章生成 19 项 + 语义检索 15 项）；单测默认关闭本地 embedding、用假向量注入，不依赖模型下载；
 - 运行时依赖只有 React 本体 + FastAPI（docx 解析用 `python-docx`，文件上传用 `python-multipart`，AI 问答用 `httpx` + `pydantic-settings`）。
 
 ## 7. 开发日志
@@ -167,7 +175,9 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - **11-24 口径裁决落地**：用户明确「QS 52、20260618 为准，副本忽略」。此前规则只报冲突、把权威值留给传讯处确认；现新建 `campus-kb/authority.json` 作单一事实源（版本 20260618、取代 2026.05、忽略带 `(2)` 的副本、QS 2027 = 52，并以两篇官方推文为证），`checker.py` 增 `load_authority()` / `authority_brief()`，`h_rank_conflict` 升级为「偏离权威值即判错」（冲突与偏离合并为一条命中，坏样例 17 项基线不变）；`rank.json` 及其余 5 个规则文件出处统一到 20260618。口径经 `authority_brief()` 注入 Agent 系统提示与 `/api/compose` 素材上下文，避免生成文章沿用旧值。合规样例 `good-draft.md` 改为第 52 位；`bad-draft.md` 与前端演示稿里的「第63位 / 52rd」保留为**故意错误样例**（正是新规则要抓的偏离），演示报告重新生成。前端 `content.ts` / `cases.ts` / 测试夹具同步为已裁决表述，README 两份与 ADR 同步。
 
-踩过的坑（均已写进代码注释或测试）：
+- **11-24 多轮修订 + 草稿留存**：补上「一次成稿改不到能发」这个最大断点。新增 `POST /api/compose/revise`——沿用上一版的 `sources` 素材编号，把当前 `article` 一起塞回给模型，只按指令改被点名的部分，其余逐字保留；服务端无状态，改完只重跑引用核对与发前检查。前端写文章页加「继续改」区（6 条快捷指令 + 自由输入）、版本切换条（最近 4 版，在历史版本上改会分叉）、草稿箱（`localStorage`，最多 5 篇，刷新不丢）。真实链路验证：成稿 → 标题改短 → 压缩第三部分，三次均 `200`、`grounded=True`、结构保持 4 节。过程中发现一个真实质量问题：模型把标题改短时会擅自用「港城大」简称，而规则库只对「港城莞」有 NAME-001 命中，对「港城大」不判——先在两份 system prompt 里明确「校名首次出现写全称、不要为标题简短改简称」，改后发前检查从 1 个 error 降到 0。规则库这处缺口留作后续（加规则需要权威依据，不擅自造）。后端 109 → **125 项**、前端 72 → **79 项**全绿，typecheck / eslint / prettier / vite build 均通过。
+
+
 
 | 现象 | 根因 | 处理 |
 | --- | --- | --- |

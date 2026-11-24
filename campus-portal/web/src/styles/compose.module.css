@@ -363,3 +363,214 @@ details[open] .dSummary::before {
     }
   }
 }
+
+/* ---- 草稿箱 ---- */
+.draftBtn {
+  font-size: 12px;
+  padding: 5px 12px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.draftBtn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.drafts {
+  border: 1px solid var(--line);
+  background: var(--surface);
+  margin-bottom: 20px;
+}
+.draftsHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  padding: 10px 16px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sunk);
+  font-size: 12px;
+  font-weight: 700;
+}
+.draftsHint {
+  font-weight: 400;
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.draftsEmpty {
+  margin: 0;
+  padding: 16px;
+  font-size: 13px;
+  color: var(--ink-3);
+}
+.draftItem {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  border-bottom: 1px solid var(--line);
+}
+.draftItem:last-child {
+  border-bottom: 0;
+}
+.draftOpen {
+  flex: 1;
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  padding: 11px 16px;
+  border: 0;
+  background: transparent;
+  text-align: left;
+  cursor: pointer;
+  font-family: var(--sans);
+  color: var(--ink);
+  min-width: 0;
+}
+.draftOpen:hover {
+  background: var(--sunk);
+}
+.draftTopic {
+  font-size: 13px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.draftMeta {
+  margin-left: auto;
+  flex: none;
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.draftDel {
+  flex: none;
+  margin-right: 12px;
+  font-size: 11.5px;
+  padding: 3px 8px;
+  border: 1px solid transparent;
+  background: transparent;
+  color: var(--ink-4);
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.draftDel:hover {
+  border-color: var(--err);
+  color: var(--err);
+}
+
+/* ---- 版本切换 ---- */
+.versionBar {
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  padding: 9px 18px;
+  border-bottom: 1px solid var(--line);
+  flex-wrap: wrap;
+}
+.versionLabel {
+  font-family: var(--mono);
+  font-size: 11px;
+  color: var(--ink-4);
+}
+.versionBtn {
+  font-family: var(--mono);
+  font-size: 11.5px;
+  padding: 2px 9px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+}
+.versionBtn:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.versionOn {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+.versionHint {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+
+/* ---- 继续改 ---- */
+.revise {
+  border-top: 1px solid var(--line);
+  padding: 14px 18px 16px;
+  background: var(--sunk);
+}
+.reviseHead {
+  display: flex;
+  align-items: baseline;
+  gap: 10px;
+  margin-bottom: 10px;
+}
+.reviseTitle {
+  font-size: 12.5px;
+  font-weight: 700;
+}
+.reviseHint {
+  font-size: 11.5px;
+  color: var(--ink-4);
+}
+.reviseChips {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 7px;
+  margin-bottom: 10px;
+}
+.reviseChip {
+  font-size: 12px;
+  padding: 3px 10px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.reviseChip:hover:not(:disabled) {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.reviseChip:disabled {
+  opacity: 0.5;
+  cursor: default;
+}
+.reviseRow {
+  display: flex;
+  gap: 8px;
+}
+.reviseInput {
+  flex: 1;
+  min-width: 0;
+  font-size: 13px;
+  padding: 8px 11px;
+  border: 1px solid var(--line-2);
+  background: var(--surface);
+  color: var(--ink);
+  font-family: var(--sans);
+}
+.reviseInput:focus {
+  outline: 2px solid var(--brand);
+  outline-offset: -1px;
+}
+.reviseInput::placeholder {
+  color: var(--ink-4);
+}
+.reviseBtn {
+  flex: none;
+  font-size: 12.5px;
+  padding: 0 16px;
+  border: 1px solid var(--brand);
+  background: var(--brand);
+  color: var(--surface);
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.reviseBtn:disabled {
+  opacity: 0.45;
+  cursor: default;
+}

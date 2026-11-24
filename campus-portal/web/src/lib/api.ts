@@ -260,8 +260,36 @@ export async function postCompose(topic: string, signal?: AbortSignal): Promise<
   return (await r.json()) as ComposeResult;
 }
 
-/** GET /api/rules 的一条规则（见 campus-kb/api/main.py list_rules） */
-export interface ApiRule {
+export interface RevisePayload {
+  readonly topic: string;
+  readonly instruction: string;
+  readonly article: ComposeArticle;
+  readonly sources: readonly ComposeSource[];
+  readonly rules: readonly Record<string, unknown>[];
+}
+
+/**
+ * 改稿：把上一版草稿连同素材编号一起回传，后端按指令继续改。
+ * sources 必须原样带回，否则正文里的 [A#] 会失去指向。
+ */
+export async function postRevise(
+  payload: RevisePayload,
+  signal?: AbortSignal,
+): Promise<ComposeResult> {
+  const r = await fetch('/api/compose/revise', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify(payload),
+    signal,
+  });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `改稿接口返回 ${r.status}`);
+  }
+  return (await r.json()) as ComposeResult;
+}
+
+/** GET /api/rules 的一条规则（见 campus-kb/api/main.py list_rules） */ export interface ApiRule {
   id: string;
   category: string;
   severity: string;

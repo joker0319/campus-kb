@@ -194,3 +194,67 @@ class TestComposeArticle:
 
         with pytest.raises(deepseek.DeepSeekUnavailable):
             asyncio.run(compose.compose_article("科研", rules, settings=settings, client=BrokenClient()))
+
+
+BLOCKS = [{"ref": "A1", "kind": "wechat", "text": "学校取得科研突破", "file": "x_WX.txt", "line": 3}]
+
+
+class TestReviseArticle:
+    """改稿：沿用原素材编号，只按指令调整被点名的部分。"""
+
+    def test_revise_reuses_material_refs(self) -> None:
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        revised_payload = _article_payload()
+        revised_payload["title"] = "短标题"
+        fake = _FakeAgentClient([
+            {"choices": [{"message": {"role": "assistant", "content": json.dumps(revised_payload, ensure_ascii=False)}}]}
+        ])
+        rules, _ = checker.load_rules()
+        article = compose.parse_article(json.dumps(_article_payload(), ensure_ascii=False))
+
+        result = asyncio.run(
+            compose.revise_article("科研进展", article, "标题再短一点", BLOCKS, [], rules, settings=settings, client=fake)
+        )
+
+        assert result["article"]["title"] == "短标题"
+        assert result["instruction"] == "标题再短一点"
+        assert result["citations"]["grounded"] is True
+        assert result["meta"]["revised"] is True
+        sent = fake.calls[0]["json"]["messages"]
+        assert "标题再短一点" in sent[1]["content"]
+        # 当前草稿与编号素材都要进上下文，否则模型改出来的引用会对不上
+        assert "港城莞科研新进展" in sent[1]["content"]
+        assert "[A1]" in sent[1]["content"]
+
+    def test_empty_model_output_keeps_previous_draft(self) -> None:
+        """模型返回不可解析内容时，保留原稿而不是覆盖成空白。"""
+        settings = deepseek.Settings(deepseek_api_key="sk-test")
+        fake = _FakeAgentClient([
+            {"choices": [{"message": {"role": "assistant", "content": "抱歉，我无法完成"}}]}
+        ])
+        rules, _ = checker.load_rules()
+        article = compose.parse_article(json.dumps(_article_payload(), ensure_ascii=False))
+
+        result = asyncio.run(
+            compose.revise_article("科研进展", article, "改标题", BLOCKS, [], rules, settings=settings, client=fake)
+        )
+
+        assert result["article"]["title"] == article["title"]
+        assert result["article"]["sections"][0]["paragraphs"][0]["text"] == "据档案记载，学校取得进展。"
+
+    def test_revise_endpoint_without_key_returns_503(
+        self, client: TestClient, monkeypatch: pytest.MonkeyPatch
+    ) -> None:
+        monkeypatch.setattr(deepseek, "get_settings", lambda: deepseek.Settings(deepseek_api_key=""))
+        r = client.post(
+            "/api/compose/revise",
+            json={"topic": "科研", "instruction": "标题短一点", "article": _article_payload(), "sources": BLOCKS},
+        )
+        assert r.status_code == 503
+
+    def test_blank_instruction_rejected(self, client: TestClient) -> None:
+        r = client.post(
+            "/api/compose/revise",
+            json={"instruction": "", "article": _article_payload(), "sources": BLOCKS},
+        )
+        assert r.status_code == 422
