@@ -1,11 +1,24 @@
 import { useRef, useState } from 'react';
-import { postCompose, postRevise, type ComposeResult, type ComposeSource } from '../lib/api';
+import {
+  postCompose,
+  postRevise,
+  type ComposeResult,
+  type ComposeSource,
+  type ComposeStyleId,
+} from '../lib/api';
 import s from '../styles/compose.module.css';
 
 const SUGGESTIONS = [
   '写一篇介绍学校最新科研进展的公众号推文',
   '围绕港城莞 1000 万元捐赠与未来智能中心写一篇推文',
   '根据往期推文，写一篇校园心理健康关怀的文章',
+];
+
+const STYLE_OPTIONS: readonly { id: ComposeStyleId; name: string; hint: string }[] = [
+  { id: 'auto', name: '自动判断', hint: '按选题里的关键词选文体' },
+  { id: 'news', name: '新闻动态', hint: '会议、活动、来访、签约' },
+  { id: 'celebration', name: '喜讯捷报', hint: '获奖、入选、获批、排名' },
+  { id: 'speech', name: '致辞讲稿', hint: '奠基、典礼、论坛发言' },
 ];
 
 const QUICK_EDITS = [
@@ -76,6 +89,7 @@ function sourceLine(source: ComposeSource): string {
 /** 写文章页：选题 → 检索成稿 → 继续改 → 版本回看 → 导出。 */
 export default function Compose() {
   const [topic, setTopic] = useState('');
+  const [style, setStyle] = useState<ComposeStyleId>('auto');
   const [state, setState] = useState<State>({ kind: 'idle' });
   const [copied, setCopied] = useState(false);
   const [instruction, setInstruction] = useState('');
@@ -95,7 +109,7 @@ export default function Compose() {
     setInstruction('');
     resultRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     try {
-      const result = await postCompose(clean);
+      const result = await postCompose(clean, style);
       const draftId = newDraftId();
       setState({ kind: 'done', versions: [result], index: 0, draftId });
       setDrafts((prev) =>
@@ -125,6 +139,7 @@ export default function Compose() {
         article: base.article,
         sources: base.sources,
         rules: base.rules,
+        style: base.style.id,
       });
       const versions = [...state.versions.slice(0, state.index + 1), next].slice(-MAX_VERSIONS);
       const index = versions.length - 1;
@@ -240,6 +255,21 @@ export default function Compose() {
             <label className={s.label} htmlFor="compose-topic">
               文章选题 / 写作要求
             </label>
+            <div className={s.styleRow}>
+              <span className={s.styleLabel}>文体</span>
+              {STYLE_OPTIONS.map((o) => (
+                <button
+                  type="button"
+                  key={o.id}
+                  className={`${s.styleChip} ${style === o.id ? s.styleOn : ''}`}
+                  onClick={() => setStyle(o.id)}
+                  title={o.hint}
+                  aria-pressed={style === o.id}
+                >
+                  {o.name}
+                </button>
+              ))}
+            </div>
             <textarea
               id="compose-topic"
               className={s.input}
@@ -290,6 +320,9 @@ export default function Compose() {
             <div className={s.result} ref={resultRef}>
               <div className={s.resultBar}>
                 <span className={s.resultTitle}>草稿预览</span>
+                <span className={s.badge}>
+                  {current.style.auto ? `自动 · ${current.style.name}` : current.style.name}
+                </span>
                 <span
                   className={`${s.badge} ${current.citations.grounded ? s.badgeOk : s.badgeWarn}`}
                 >

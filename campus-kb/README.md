@@ -29,7 +29,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 125 个用例，含 bad 17 / good 0 基线、文章生成 19 项、语义检索 15 项
+uv run pytest                                             # 139 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、语义检索 15 项
 ```
 
 | 接口 | 说明 |
@@ -41,10 +41,24 @@ uv run pytest                                             # 125 个用例，含 
 | `POST /api/review-file` | 上传 `.docx` → `{ filename, text, findings[], counts, ruleCount, report }`；段落/表格文本提取后复用同一套规则，report 为 Markdown 报告 |
 | `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
 | `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
-| `POST /api/compose` | `{ topic }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
-| `POST /api/compose/revise` | `{ topic, instruction, article, sources[], rules[] }` → 同 compose 结构 + `instruction`；改稿：前端把上一版草稿与 `A#` 素材原样回传，服务端无状态、**不重新检索**（否则正文引用会指向别处），只按指令改被点名的部分，改完重跑引用核对 + `archive` 发前检查；模型输出不可解析时保留原稿 |
+| `POST /api/compose` | `{ topic, style? }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
+| `POST /api/compose/revise` | `{ topic, instruction, article, sources[], rules[], style? }` → 同 compose 结构 + `instruction`；改稿：前端把上一版草稿与 `A#` 素材原样回传，服务端无状态、**不重新检索**（否则正文引用会指向别处），只按指令改被点名的部分，改完重跑引用核对 + `archive` 发前检查；模型输出不可解析时保留原稿 |
 
 AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat`、`/api/agent`、`/api/compose`、`/api/compose/revise` 不可用，其他接口不受影响。
+
+## 文体模板（api/styles.py）
+
+三套模板：`news` 新闻动态 / `celebration` 喜讯捷报 / `speech` 致辞讲稿。
+每套含标题规则、导语要求、结构骨架（喂给模型组织 `sections`）、语气、篇幅、避免项。
+**模板只约束结构，不写任何具体事实**——模板里出现数字或人名就会和素材打架。
+
+结构从本项目语料真实成稿提炼：合作大学联盟会议报道（导语五要素 → 分环节 → 意义收束）、
+41 位学者入选榜单喜讯（来源背景 → 数字成果 → 名单 → 表态 → 榜单说明）、
+奠基仪式致辞（称呼问候 → 里程碑 → 回顾优势 → 规划致谢 → 祝愿）。
+
+`style` 缺省 `auto`：按选题关键词路由，致辞类优先判定，其次喜讯类，其余落新闻；
+显式指定永远优先（选题里有「喜讯」也按用户点的新闻写）；未知值按 `auto` 处理，不返回 422。
+文体块同时注入成稿与改稿的 system prompt——改稿不带文体，模型容易把致辞改成新闻腔。
 
 ## 语义检索（api/rag.py）
 
@@ -169,7 +183,7 @@ swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 g
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
-├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py + search.py + rag.py 混合检索）
+├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py 成稿/改稿 + styles.py 文体模板 + search.py + rag.py 混合检索）
 ├── tools/                  # 本地工具：文章抓取（fetch_wechat.py）+ 列表采集（collect_links.js）+ Vision OCR（ocr.swift）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文

@@ -213,6 +213,15 @@ export interface ComposeArticle {
   readonly imageSuggestions: readonly { readonly after: string; readonly description: string }[];
 }
 
+/** 可选文体：auto 按选题判定，其余显式指定 */
+export type ComposeStyleId = 'auto' | 'news' | 'celebration' | 'speech';
+
+export interface ComposeStyle {
+  readonly id: string;
+  readonly name: string;
+  readonly auto: boolean;
+}
+
 export interface ComposeResult {
   readonly topic: string;
   readonly article: ComposeArticle;
@@ -242,15 +251,20 @@ export interface ComposeResult {
       readonly suggestion: string;
     }[];
   };
+  readonly style: ComposeStyle;
   readonly model: string;
 }
 
-/** 文章生成：选题 → 检索知识库成稿 → 出处与规范校验；失败时透传后端 detail。 */
-export async function postCompose(topic: string, signal?: AbortSignal): Promise<ComposeResult> {
+/** 文章生成：选题 + 文体 → 检索知识库成稿 → 出处与规范校验；失败时透传后端 detail。 */
+export async function postCompose(
+  topic: string,
+  style: ComposeStyleId = 'auto',
+  signal?: AbortSignal,
+): Promise<ComposeResult> {
   const r = await fetch('/api/compose', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
-    body: JSON.stringify({ topic }),
+    body: JSON.stringify({ topic, style }),
     signal,
   });
   if (!r.ok) {
@@ -266,6 +280,8 @@ export interface RevisePayload {
   readonly article: ComposeArticle;
   readonly sources: readonly ComposeSource[];
   readonly rules: readonly Record<string, unknown>[];
+  /** 沿用成稿时的文体，避免改稿把致辞写成新闻腔 */
+  readonly style: string;
 }
 
 /**

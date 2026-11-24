@@ -237,7 +237,7 @@ async def compose(req: ComposeRequest, engine: EngineDep) -> ComposeResponse:
     未配置密钥 503；上游失败 502。
     """
     try:
-        result = await compose_article(req.topic, engine[0])
+        result = await compose_article(req.topic, engine[0], style=req.style)
     except deepseek.DeepSeekNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except deepseek.DeepSeekUnavailable as exc:
@@ -260,6 +260,7 @@ async def revise(req: ReviseRequest, engine: EngineDep) -> ReviseResponse:
             [s.model_dump() for s in req.sources],
             req.rules,
             engine[0],
+            style=req.style,
         )
     except deepseek.DeepSeekNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc

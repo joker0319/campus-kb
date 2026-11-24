@@ -35,6 +35,7 @@ const RESULT: ComposeResult = {
     counts: { total: 0, error: 0, warn: 0, info: 0 },
     findings: [],
   },
+  style: { id: 'news', name: '新闻动态', auto: true },
   model: 'deepseek-chat',
 };
 
@@ -62,10 +63,28 @@ function bodyOf(init: RequestInit | undefined): unknown {
   return typeof raw === 'string' ? (JSON.parse(raw) as unknown) : null;
 }
 
-/** 按路径分流：/api/compose/revise 返回改后稿，其余返回初稿。 */
+const STYLE_NAMES: Record<string, string> = {
+  news: '新闻动态',
+  celebration: '喜讯捷报',
+  speech: '致辞讲稿',
+};
+
+/** 按路径分流：/api/compose/revise 返回改后稿，其余返回初稿；文体跟随请求。 */
 function mockByUrl() {
   const fetchMock = vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
-    const payload = urlOf(input).includes('/revise') ? REVISED : RESULT;
+    const url = urlOf(input);
+    const asked = bodyOf(_init) as { style?: string } | null;
+    const base = url.includes('/revise') ? REVISED : RESULT;
+    const requested = asked?.style;
+    const sid = requested && requested !== 'auto' ? requested : base.style.id;
+    const payload: ComposeResult = {
+      ...base,
+      style: {
+        id: sid,
+        name: STYLE_NAMES[sid] ?? base.style.name,
+        auto: !requested || requested === 'auto',
+      },
+    };
     return Promise.resolve(jsonResponse(payload));
   });
   vi.stubGlobal('fetch', fetchMock);
@@ -111,7 +130,7 @@ describe('写文章页', () => {
     expect(screen.getByText(/全部段落有出处/)).toBeTruthy();
 
     const call = fetchMock.mock.calls.find(([input]) => urlOf(input).includes('/api/compose'));
-    expect(bodyOf(call?.[1])).toEqual({ topic: '写一篇科研进展推文' });
+    expect(bodyOf(call?.[1])).toEqual({ topic: '写一篇科研进展推文', style: 'auto' });
   });
 
   it('接口失败时显示错误，不伪造草稿', async () => {
@@ -192,5 +211,50 @@ describe('写文章页 — 改稿与草稿', () => {
     await user.click(screen.getByRole('button', { name: /草稿箱 · 1/ }));
     await user.click(screen.getByText('写一篇科研进展推文'));
     expect(screen.getByText('港城莞科研新进展')).toBeTruthy();
+  });
+});
+
+describe('写文章页 — 文体模板', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    mockByUrl();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('默认按自动判断请求', async () => {
+    const fetchMock = mockByUrl();
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+
+    await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
+    const call = fetchMock.mock.calls.find(([input]) => urlOf(input).includes('/api/compose'));
+    expect(bodyOf(call?.[1])).toMatchObject({ style: 'auto' });
+    // auto 判成新闻，结果区要标出「自动 · 新闻动态」
+    expect(screen.getByText('自动 · 新闻动态')).toBeTruthy();
+  });
+
+  it('选喜讯捷报后按该文体请求，并沿用同一文体改稿', async () => {
+    const fetchMock = mockByUrl();
+    const user = userEvent.setup();
+    render(<Compose />);
+
+    await user.click(screen.getByRole('button', { name: '喜讯捷报' }));
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇学者入选榜单的推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+    await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
+
+    const gen = fetchMock.mock.calls.find(([input]) => urlOf(input).includes('/api/compose'));
+    expect(bodyOf(gen?.[1])).toMatchObject({ style: 'celebration' });
+
+    await user.click(screen.getByRole('button', { name: '标题再短一点' }));
+    await waitFor(() => expect(screen.getByText('科研新突破')).toBeTruthy());
+
+    const rev = fetchMock.mock.calls.find(([input]) => urlOf(input).includes('/revise'));
+    expect(bodyOf(rev?.[1])).toMatchObject({ style: 'celebration' });
   });
 });

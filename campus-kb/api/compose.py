@@ -23,7 +23,7 @@ import httpx
 
 import checker
 
-from . import deepseek, search as corpus_search
+from . import deepseek, styles, search as corpus_search
 
 MAX_CONTEXT_BLOCKS = 24   # 交给模型的素材块上限（控制 token）
 MAX_PER_QUERY = 6         # 每个检索词取多少行
@@ -335,17 +335,21 @@ async def compose_article(
     rules: list[dict],
     settings: deepseek.Settings | None = None,
     client: httpx.AsyncClient | None = None,
+    style: str = "auto",
 ) -> dict:
-    """主流程：检索 → 成稿 → 校验出处与规范。返回可直接下发前端的结构。"""
+    """主流程：定文体 → 检索 → 成稿 → 校验出处与规范。返回可直接下发前端的结构。"""
     cfg = settings or deepseek.get_settings()
     if not cfg.configured:
         raise deepseek.DeepSeekNotConfigured("未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥")
 
+    spec = styles.resolve_style(style, topic)
     blocks, rule_items, meta = gather_material(topic, rules)
+    meta["style"] = spec["id"]
     context = build_context(blocks, rule_items)
     user_prompt = f"请围绕选题写公众号文章草稿。\n选题：{topic}\n\n{context}"
+    system_prompt = f"{COMPOSE_SYSTEM_PROMPT}\n\n{styles.style_block(spec)}"
 
-    article = await _call_model_json(cfg, COMPOSE_SYSTEM_PROMPT, user_prompt, client)
+    article = await _call_model_json(cfg, system_prompt, user_prompt, client)
 
     cites = check_citations(article, blocks)
     review = review_article(article, rules)
@@ -358,6 +362,7 @@ async def compose_article(
         "meta": meta,
         "citations": cites,
         "review": review,
+        "style": styles.style_meta(spec, style),
         "model": cfg.deepseek_model,
     }
 
@@ -371,24 +376,28 @@ async def revise_article(
     rules: list[dict],
     settings: deepseek.Settings | None = None,
     client: httpx.AsyncClient | None = None,
+    style: str = "auto",
 ) -> dict:
     """在已有草稿上按指令改稿：素材编号与出处不变，只重跑引用与规范校验。
 
     不复用 gather_material：改稿要沿用同一批编号素材，重新检索会让正文里的
-    [A3] 指到别的内容，引用核对随即失真。
+    [A3] 指到别的内容，引用核对随即失真。文体也要带上——只给指令不给文体，
+    模型容易把致辞改成新闻腔。
     """
     cfg = settings or deepseek.get_settings()
     if not cfg.configured:
         raise deepseek.DeepSeekNotConfigured("未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥")
 
+    spec = styles.resolve_style(style, topic or str(article.get("title", "")))
     context = build_context(blocks, rule_items)
     user_prompt = (
         f"【修改指令】{instruction}\n\n"
         f"【当前草稿】\n{json.dumps(article, ensure_ascii=False, indent=2)}\n\n"
         f"{context}"
     )
+    system_prompt = f"{REVISE_SYSTEM_PROMPT}\n\n{styles.style_block(spec)}"
 
-    revised = await _call_model_json(cfg, REVISE_SYSTEM_PROMPT, user_prompt, client)
+    revised = await _call_model_json(cfg, system_prompt, user_prompt, client)
     # 模型偶发返回空结构：保留原稿，不要拿空白覆盖用户已认可的版本
     if not revised.get("sections"):
         revised = {**article, "sections": article.get("sections", [])}
@@ -405,5 +414,6 @@ async def revise_article(
         "meta": {"terms": [], "scanned": 0, "revised": True},
         "citations": cites,
         "review": review,
+        "style": styles.style_meta(spec, style),
         "model": cfg.deepseek_model,
     }

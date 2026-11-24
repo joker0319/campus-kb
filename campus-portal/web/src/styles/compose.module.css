@@ -574,3 +574,38 @@ details[open] .dSummary::before {
   opacity: 0.45;
   cursor: default;
 }
+
+/* ---- 文体选择 ---- */
+.styleRow {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  flex-wrap: wrap;
+  margin: 0 0 10px;
+}
+.styleLabel {
+  font-family: var(--mono);
+  font-size: 11px;
+  letter-spacing: 0.08em;
+  color: var(--ink-4);
+  margin-right: 2px;
+}
+.styleChip {
+  font-size: 12px;
+  padding: 4px 11px;
+  border: 1px solid var(--line);
+  background: var(--surface);
+  color: var(--ink-2);
+  cursor: pointer;
+  font-family: var(--sans);
+}
+.styleChip:hover {
+  border-color: var(--brand);
+  color: var(--brand);
+}
+.styleOn {
+  border-color: var(--brand);
+  background: var(--brand-tint);
+  color: var(--brand);
+  font-weight: 700;
+}

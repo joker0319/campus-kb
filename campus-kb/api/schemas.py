@@ -119,6 +119,10 @@ class AgentResponse(BaseModel):
 
 class ComposeRequest(BaseModel):
     topic: str = Field(min_length=2, max_length=400, description="文章选题或写作要求")
+    style: str = Field(
+        default="auto",
+        description="文体：auto（按选题判定）/ news 新闻动态 / celebration 喜讯捷报 / speech 致辞讲稿",
+    )
 
 
 class ComposeArticle(BaseModel):
@@ -158,6 +162,7 @@ class ComposeResponse(BaseModel):
     meta: dict
     citations: ComposeCitationReport
     review: ComposeReview
+    style: dict
     model: str
 
 
@@ -172,6 +177,10 @@ class ReviseRequest(BaseModel):
     article: dict = Field(description="当前草稿结构（title/lead/sections/imageSuggestions）")
     sources: list[ComposeSource] = Field(default_factory=list)
     rules: list[dict] = Field(default_factory=list)
+    style: str = Field(
+        default="auto",
+        description="沿用成稿时的文体 id（news / celebration / speech），避免改稿跑文体",
+    )
 
 
 class ReviseResponse(ComposeResponse):
