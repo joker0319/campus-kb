@@ -133,7 +133,7 @@ export default function Compose() {
   const [topic, setTopic] = useState('');
   const [style, setStyle] = useState<ComposeStyleId>('auto');
   const [state, setState] = useState<State>({ kind: 'idle' });
-  const [copied, setCopied] = useState(false);
+  const [copied, setCopied] = useState<'md' | 'html' | null>(null);
   const [instruction, setInstruction] = useState('');
   const [revising, setRevising] = useState(false);
   const [drafts, setDrafts] = useState<Draft[]>(loadDrafts);
@@ -147,7 +147,7 @@ export default function Compose() {
     const clean = value.trim();
     if (clean.length < 2) return;
     setState({ kind: 'loading' });
-    setCopied(false);
+    setCopied(null);
     setInstruction('');
     resultRef.current?.scrollIntoView({ block: 'start', behavior: 'smooth' });
     try {
@@ -219,10 +219,31 @@ export default function Compose() {
     if (!current) return;
     try {
       await navigator.clipboard.writeText(current.markdown);
-      setCopied(true);
-      window.setTimeout(() => setCopied(false), 2000);
+      setCopied('md');
+      window.setTimeout(() => setCopied(null), 2000);
     } catch {
-      setCopied(false);
+      setCopied(null);
+    }
+  };
+
+  /** 复制带样式的 HTML：粘进公众号编辑器直接是排好的版式（编辑器只认内联 style）。 */
+  const copyRichHtml = async () => {
+    if (!current) return;
+    try {
+      if (typeof ClipboardItem !== 'undefined' && navigator.clipboard.write) {
+        await navigator.clipboard.write([
+          new ClipboardItem({
+            'text/html': new Blob([current.html], { type: 'text/html' }),
+            'text/plain': new Blob([current.markdown], { type: 'text/plain' }),
+          }),
+        ]);
+      } else {
+        await navigator.clipboard.writeText(current.html);
+      }
+      setCopied('html');
+      window.setTimeout(() => setCopied(null), 2000);
+    } catch {
+      setCopied(null);
     }
   };
 
@@ -383,8 +404,11 @@ export default function Compose() {
                   </span>
                 )}
                 <span className={s.spacer} />
+                <button type="button" className={s.copyBtn} onClick={() => void copyRichHtml()}>
+                  {copied === 'html' ? '已复制排版' : '复制排版'}
+                </button>
                 <button type="button" className={s.copyBtn} onClick={() => void copyMarkdown()}>
-                  {copied ? '已复制' : '复制 Markdown'}
+                  {copied === 'md' ? '已复制' : '复制 Markdown'}
                 </button>
                 <button type="button" className={s.downloadBtn} onClick={downloadMarkdown}>
                   下载 .md

@@ -244,6 +244,8 @@ export interface ComposeResult {
   readonly topic: string;
   readonly article: ComposeArticle;
   readonly markdown: string;
+  /** 内联样式的 HTML 片段，粘进公众号编辑器即带版式 */
+  readonly html: string;
   readonly sources: readonly ComposeSource[];
   readonly rules: readonly Record<string, unknown>[];
   readonly meta: { readonly terms: readonly string[]; readonly scanned: number };

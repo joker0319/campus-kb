@@ -29,7 +29,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 155 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、配图推荐 16 项、语义检索 15 项
+uv run pytest                                             # 175 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、配图推荐 16 项、排版导出 9 项、语义检索 15 项
 ```
 
 | 接口 | 说明 |
@@ -41,7 +41,7 @@ uv run pytest                                             # 155 个用例，含 
 | `POST /api/review-file` | 上传 `.docx` → `{ filename, text, findings[], counts, ruleCount, report }`；段落/表格文本提取后复用同一套规则，report 为 Markdown 报告 |
 | `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
 | `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
-| `POST /api/compose` | `{ topic, style? }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
+| `POST /api/compose` | `{ topic, style? }` → `{ article, markdown, html, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测。`html` 是内联样式的可直粘片段（见下节「排版导出」） |
 | `GET /api/figure/{id}` | → 图片二进制；界面上点「取原图」才请求这里（默认只显示占位块）。索引缺失或文件被删返回 404 |
 | `GET /api/figures/stats` | → `{ total, kinds }`，确认配图库状态 |
 | `POST /api/compose/revise` | `{ topic, instruction, article, sources[], rules[], style? }` → 同 compose 结构 + `instruction`；改稿：前端把上一版草稿与 `A#` 素材原样回传，服务端无状态、**不重新检索**（否则正文引用会指向别处），只按指令改被点名的部分，改完重跑引用核对 + `archive` 发前检查；模型输出不可解析时保留原稿 |
@@ -236,7 +236,7 @@ swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 g
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
-├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py 成稿/改稿 + styles.py 文体模板 + figures.py 配图推荐 + search.py + rag.py 混合检索）
+├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py 成稿/改稿 + styles.py 文体模板 + export_html.py 排版导出 + figures.py 配图推荐 + search.py + rag.py 混合检索）
 ├── tools/                  # 本地工具：文章抓取（fetch_wechat.py）+ 列表采集（collect_links.js）+ Vision OCR（ocr.swift）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文
@@ -291,11 +291,29 @@ campus-kb/
 - 中文分词靠正则，遇到长句中的职务简称（如「段校长」）可能漏判，目前靠人名 + 窗口匹配兜底。
 - 配图库只在本地：图片与索引都在 `corpus/`（真实师生影像，不入库），换机器需重跑建库 + 重新标注。
 - 配图推荐靠图注文字匹配，图库没覆盖的主题（如新活动）会返回空——设计上宁可空着，不拿不相关的图凑数。
+- 排版导出的字号、主色写死在 `api/export_html.py` 常量里，换版式要改代码（`corpus/layout.json` 目前只服务于校稿台渲染）。
+
+## 排版导出（api/export_html.py）
+
+公众号编辑器只认真实 HTML，而且会把 `<style>` 标签与 class 全剥掉，只留内联 `style=""`。
+所以这里不写样式表，标签只用 `section / h1 / h2 / p`，版式全部落在标签身上：
+
+- 标题 22px 居中加粗 → 导语 14.5px 灰字居中 → 细分隔线 → 小标题 17.5px 带 `#A6192E` 左侧竖线
+  → 正文 16px / 行高 1.9 / 两端对齐，段间距 18px；
+- `[A1]` 这类内部素材编号不渲染（核对出处在界面里做），发布稿不该出现；
+- 「（素材不足，待补充）」整段跳过；整节都是占位时连小标题一起不出，避免空标题；
+- 配图给虚线占位框：「配图占位 · 请替换为对应现场照片」+ 图注 + 原图尺寸，按 `sectionIndex`
+  落到对应小节末尾，与界面上的占位卡片一致；
+- 只输出片段、不套 `<html><body>`——前端「复制排版」直接以 `text/html` 写剪贴板，粘贴即带版式；
+  同时写一份 `text/plain`（Markdown）兜底不支持富文本的编辑器。
+
+真实成稿（《2026级本科新生报到与入学指引》）：5986 字符、8 个占位框、11 段正文，
+`<img>`、`class=`、`[A` 三样都是 0 处。
 
 ## 下一步
 
-1. **排版导出**：公众号编辑器只认内联样式，现在是 Markdown。按往期推文的版式产出一份可直接粘贴的
-   HTML（段落缩进、行距、小标题样式、图片占位），把「复制到后台还要手动排版」这一步省掉。
+1. **排版参数化**：字号、主色、是否首行缩进现在写死在 `export_html.py`，改成读
+   `corpus/layout.json`，换版式不用改代码。
 2. **图注可用性**：672 张图的描述是分批人工/视觉标注的，新增推文要先拼图再标；
    增量流程已经就位（只拼未标注的、累加合并），可以进一步做成半自动——拼图后直接调视觉模型预填，人工只复核。
 3. **多稿对比**：同选题跑 2–3 版挑一版，或让编辑在两条改稿路径里选。

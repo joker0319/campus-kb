@@ -21,6 +21,7 @@ const RESULT: ComposeResult = {
     imageSuggestions: [{ after: '科研', description: '实验室照片' }],
   },
   markdown: '# 港城莞科研新进展\n据档案记载，学校取得进展。 [A1]',
+  html: '<section style="padding:0 2px;"><h1 style="margin:0;">港城莞科研新进展</h1></section>',
   sources: [{ ref: 'A1', kind: 'wechat', text: '学校取得进展', file: 'news_WX.txt', line: 3 }],
   rules: [],
   meta: { terms: ['科研'], scanned: 50 },
@@ -334,5 +335,70 @@ describe('写文章页 — 可用配图', () => {
     await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
 
     expect(screen.getByText('关联度一般，请确认')).toBeTruthy();
+  });
+});
+
+describe('写文章页 — 复制排版', () => {
+  beforeEach(() => {
+    window.localStorage.clear();
+    mockByUrl();
+  });
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('把 HTML 作为 text/html 写进剪贴板，粘到编辑器即带版式', async () => {
+    const user = userEvent.setup();
+    // userEvent.setup() 会装自己的 clipboard stub，所以要在它之后覆盖
+    const write = vi.fn().mockResolvedValue(undefined);
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { write, writeText: vi.fn() },
+      configurable: true,
+    });
+    class FakeClipboardItem {
+      readonly items: Record<string, Blob>;
+      constructor(items: Record<string, Blob>) {
+        this.items = items;
+      }
+    }
+    vi.stubGlobal('ClipboardItem', FakeClipboardItem);
+
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+    await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
+
+    await user.click(screen.getByRole('button', { name: '复制排版' }));
+
+    await waitFor(() => expect(write).toHaveBeenCalledTimes(1));
+    const item = (write.mock.calls[0]?.[0] as FakeClipboardItem[])[0] as FakeClipboardItem;
+    expect(item.items['text/html']?.type).toBe('text/html');
+    // 同时带纯文本兜底：不支持富文本的编辑器至少能拿到 Markdown
+    expect(item.items['text/plain']?.type).toBe('text/plain');
+    expect(screen.getByRole('button', { name: '已复制排版' })).toBeTruthy();
+  });
+
+  it('剪贴板不可写时按钮回到未复制状态，不抛错', async () => {
+    const user = userEvent.setup();
+    Object.defineProperty(navigator, 'clipboard', {
+      value: { write: vi.fn().mockRejectedValue(new Error('denied')), writeText: vi.fn() },
+      configurable: true,
+    });
+    vi.stubGlobal(
+      'ClipboardItem',
+      class {
+        constructor(readonly items: Record<string, Blob>) {}
+      },
+    );
+
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+    await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
+
+    await user.click(screen.getByRole('button', { name: '复制排版' }));
+
+    await waitFor(() => expect(screen.getByRole('button', { name: '复制排版' })).toBeTruthy());
   });
 });

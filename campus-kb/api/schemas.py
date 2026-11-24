@@ -174,6 +174,7 @@ class ComposeResponse(BaseModel):
     topic: str
     article: ComposeArticle
     markdown: str
+    html: str = Field(default="", description="可直接粘进公众号编辑器的内联样式 HTML 片段")
     sources: list[ComposeSource]
     rules: list[dict]
     meta: dict

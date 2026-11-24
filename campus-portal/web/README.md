@@ -28,7 +28,7 @@ npm run check      # 类型 + lint + 格式 + 测试，提交前跑这个
 src/
   App.tsx               hash 路由：#/ 首页 · #/compose 写文章 · #/desk 校稿台 · #/assistant 助手
   pages/Landing.tsx     首页（导航 + 主体 + 底部，动效编排）
-  pages/Compose.tsx     写文章（选题输入 → 结构化草稿 → 出处/检查 → 复制/下载）
+  pages/Compose.tsx     写文章（选题输入 → 结构化草稿 → 出处/检查 → 复制排版 / 复制 Markdown / 下载）
   pages/Desk.tsx        校稿台（克制模式）
   pages/Assistant.tsx   Agent 助手（单输入框，模型自选工具，展示执行轨迹）
   types.ts              领域模型（Issue 用 `${ruleId}@${line}` 作稳定 key）

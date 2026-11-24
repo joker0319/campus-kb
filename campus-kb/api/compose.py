@@ -24,7 +24,7 @@ import httpx
 
 import checker
 
-from . import deepseek, figures, styles, search as corpus_search
+from . import deepseek, export_html, figures, styles, search as corpus_search
 
 MAX_CONTEXT_BLOCKS = 24   # 交给模型的素材块上限（控制 token）
 MAX_PER_QUERY = 6         # 每个检索词取多少行
@@ -438,6 +438,7 @@ async def compose_article(
         "topic": topic,
         "article": article,
         "markdown": article_to_markdown(article) + figures_to_markdown(figs),
+        "html": export_html.article_to_html(article, figs),
         "sources": blocks,
         "rules": rule_items,
         "meta": meta,
@@ -492,6 +493,7 @@ async def revise_article(
         "instruction": instruction,
         "article": revised,
         "markdown": article_to_markdown(revised) + figures_to_markdown(figs),
+        "html": export_html.article_to_html(revised, figs),
         "sources": blocks,
         "rules": rule_items,
         "meta": {"terms": [], "scanned": 0, "revised": True},
