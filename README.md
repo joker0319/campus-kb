@@ -5,7 +5,7 @@
 > [!NOTE] 项目主线
 > **检索知识库 → Agent 组织内容 → 生成可发布文章**。稿件规范校验只是这条链上的**一个功能**，不是项目定位。
 
-- **campus-kb** —— 知识库与后端：规则引擎（19 条可溯源规则）、档案/推文语料、检索、FastAPI、DeepSeek Agent；
+- **campus-kb** —— 知识库与后端：规则引擎（19 条可溯源规则）、档案/推文语料、**段落分块 + BM25 + 本地 embedding 混合检索**、FastAPI、DeepSeek Agent；
 - **campus-portal/web** —— React + TypeScript 前端：内容助手（Agent 对话）、校稿台（校验功能之一）、首页。
 
 > 内部工具。仓库只包含代码、规则与自建样例，**不含任何原始规范文件**。
@@ -26,8 +26,9 @@
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
+| RAG 语义检索 `api/rag.py` | ✅ 可用 | 50 份语料切成 771 个带起止行号的段落块；BM25（字符 2-gram）+ 本地 ONNX `bge-small-zh-v1.5` 向量，RRF 融合；模型缺失自动降级纯 BM25。向量索引按语料版本戳落盘，入库新文章自动重建 |
 | 文章生成 `#/compose` | ✅ 可用 | 输入选题 → 检索知识库 → DeepSeek 成结构化草稿（标题/导语/分节正文/配图建议）→ 后端校验每段出处 + 发前规范检查；无依据段落明确标注，不臆测。`POST /api/compose`，真实密钥端到端验证通过 |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成），94 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成），109 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 公众号语料入库 | ✅ 可用 | `campus-kb/tools/fetch_wechat.py` 抓自有公众号推文转 `corpus/text/*_WX.txt`，`_WX` 标记来源；文字型直接提取，长图型用 macOS Vision OCR（`tools/ocr.swift`，切片拼接识别）。入库即可被 `/api/search` 与 Agent 检索，无需重启 |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
@@ -50,7 +51,7 @@
 .
 ├── campus-kb/                     # 规则引擎 + FastAPI 薄后端
 │   ├── checker.py                 # 引擎：加规则只改 JSON，不改代码
-│   ├── api/                       # FastAPI 封装：/api/review、/api/rules、/api/health、/api/search
+│   ├── api/                       # FastAPI 薄封装 + rag.py（分块 / BM25 / 向量混合检索）
 │   ├── tests/                     # pytest：契约 + bad 17 / good 0 基线断言
 │   ├── rules/                     # 8 个规则文件
 │   ├── samples/                   # 正反样例
@@ -102,7 +103,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - 单输入框对话，用户不必选工具。DeepSeek Function Calling 自己判断调用哪一个：
   - `search_rules` → 规则库检索（后端 `checker.load_rules()`）
-  - `search_archive` → 档案库全文检索（后端 `api/search.py`）
+  - `search_archive` → 档案库混合检索：BM25 + 语义向量（后端 `api/rag.py`）
   - `review_draft` → 规则引擎校验（后端 `checker.run()`，结论以此为准）
 - 工具在后端**确定性执行**，结果作为 tool 消息回灌模型；模型只做意图判断与语言组织，不产出校验结论。循环上限 4 步，防止不收敛。
 - 前端展示模型回答 + 执行轨迹（每步调用了什么、传了什么参数、返回哪些依据条目）；查不到直说没依据，不臆测。
@@ -112,7 +113,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 **写文章 `#/compose`（主线功能）**
 
 - 首页主 CTA「开始写文章」进入；输入选题（或点示例），一次请求拿到结构化草稿；
-- 后端三段流水线（`api/compose.py`）：① 确定性检索——把选题拆成检索词，从档案/往期推文取带文件名+行号的片段编号 `A1..`，从规范取 `R1..`；② DeepSeek 以 JSON 模式成稿，每段必须带 `[A#]` 引用，素材不足写「（素材不足，待补充）」不许编造；③ 后端核对引用编号（无效引用/无出处段落都暴露），并跑规则引擎做发前检查；
+- 后端三段流水线（`api/compose.py`）：① 确定性检索——**整句选题走混合检索**（BM25 + 语义向量），从档案/往期推文取带文件名 + 起止行号的段落块编号 `A1..`，从规范取 `R1..`；整句结果充足时不再补逐词检索，避免「写一」「一篇」这类常见 2-gram 引入无关素材；② DeepSeek 以 JSON 模式成稿，每段必须带 `[A#]` 引用，素材不足写「（素材不足，待补充）」不许编造；③ 后端核对引用编号（无效引用/无出处段落都暴露），并跑规则引擎做发前检查；
 - 发前检查用 `archive` 模式——公众号文章不是投稿件，跳过 SUB-* 投稿格式规则（标题格式/英文标注/内容分类），只保留 NAME/PUNCT 等内容规范；
 - 前端展示草稿 + 每段引用标记 + 配图建议；「事实依据」列出被引用素材的文件与行号，可回溯；「发前检查」列规范命中；可复制/下载 Markdown；
 - `POST /api/compose`：未配置密钥 503、上游失败 502。真实密钥端到端验证：产出标题/导语/3 节正文/3 条配图建议，`grounded=True`（所有段落有出处），发前检查 0 误报。
@@ -135,7 +136,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 72 个（Vitest + Testing Library，含写文章页 4 项），后端 94 个（pytest，含文章生成 15 项）；
+- 测试：前端 72 个（Vitest + Testing Library，含写文章页 4 项），后端 109 个（pytest，含文章生成 15 项 + 语义检索 15 项）；单测默认关闭本地 embedding、用假向量注入，不依赖模型下载；
 - 运行时依赖只有 React 本体 + FastAPI（docx 解析用 `python-docx`，文件上传用 `python-multipart`，AI 问答用 `httpx` + `pydantic-settings`）。
 
 ## 7. 开发日志
@@ -159,6 +160,8 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - **11-24 逐篇入库通道**：用户拿不到公众号后台登录态，只能一篇篇复制链接，原「先导 `urls.txt` 再批量抓」的路径走不通。抓取工具改为接受**任意粘贴文本**：全局扫描 `mp.weixin.qq.com/s` 链接，标题、分享卡片、粘连无分隔、带 `?scene=1#rd` 追踪参数的都能解析；短链归一成规范形态，同一篇从不同入口复制多次只抓一遍。新增 `--paste`（读 stdin）与 `corpus` 外的累积收件箱 `inbox.txt`（不带任何参数时默认读它，已 gitignore），攒几条抓一次、已入库自动跳过。过程中修掉一个真 bug：整体正则贪婪匹配会吞掉相邻链接的 `https`，实测 4 条粘连链接只抽到 2 条，改为前缀与正文分开扫描。后端测试 67 → **79 项**（新增 12 项链接抽取与来源汇总测试）。
 - **11-24 定位再明确 + 文章生成（主线落地）**：用户再次明确整体定位是「RAG 知识库 + Agent 助手 → 生成可使用的微信公众号文章」，规范校验只是其中一个功能；据此把全项目定位表述（README 三份、前端文案、模块 docstring、Agent system prompt）统一改正。随后实现 P0 主线功能：新增 `api/compose.py` 三段流水线（确定性检索素材编号 → DeepSeek JSON 模式成稿 → 后端校验出处 + 发前规范检查），`POST /api/compose`；前端新增 `#/compose` 写文章页（选题输入、结构化草稿预览、引用标记、配图建议、事实依据、发前检查、复制/下载 Markdown），首页主 CTA 改为「开始写文章」。真实调用暴露一个误报——发前检查把 SUB-* 投稿格式规则套到公众号文章上，改用 `archive` 模式跳过（公众号非投稿件）。真实密钥端到端验证：产出标题/导语/3 节正文/3 条配图建议，`grounded=True`、发前检查 0 误报。后端 79 → **94 项**、前端 68 → **72 项**。
 
+- **11-24 P0 落地：RAG 语义检索（混合召回）**：用户「做 p0」。新增 `api/rag.py`：语料按行聚合成 771 个段落块（带 file + start_line/end_line，空行弱边界、超长行滑窗切、相邻块重叠一行），稀疏路纯 Python BM25（中文字符 2-gram）、稠密路本地 ONNX `fastembed` + `BAAI/bge-small-zh-v1.5`（512 维，不调外部 embedding API、无需额外密钥），两路按 RRF 融合；向量索引按语料版本戳落盘 `corpus/.index/`（gitignore），新增文章自动重建。`GET /api/search` 加 `mode`（hybrid 默认 / keyword / semantic / strict 旧 AND 回归对照），Agent 的 `search_archive` 与 `compose` 素材检索同步切到混合召回，compose 改为整句入检、只在结果不足时补词。模型缺失 / 下载失败 / `CAMPUS_EMBEDDING=off` 时自动降级纯 BM25，功能永不挂；测试用假向量注入并默认关模型，不依赖 95MB 下载。过程中修掉一个真 bug：分块最小长度会丢掉短文件（语料最短 14 字），导致文章生成素材为空。真实端到端：换词提问「学生心理辅导应该去哪里预约」hybrid 前三条全是心理相关（top1 命中地点 + 24 小时热线），纯 keyword 第三条混入「巡检机器人」；`/api/compose` 用「学生心理健康支持服务」选题产出 3 段全带出处的正文（含地点、开放时间、热线），`grounded=True`。后端 94 → **109 项**（新增 15 项）全绿。
+
 踩过的坑（均已写进代码注释或测试）：
 
 | 现象 | 根因 | 处理 |
@@ -176,13 +179,13 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - 中文分词靠正则，长句中的职务简称（如「段校长」）可能漏判，靠人名 + 窗口匹配兜底；
 - docx 支持正文提取与报告导出，但不在原 `.docx` 上写真批注（只输出 Markdown 报告）；扫描件 PDF 仍需人工/OCR；
 - Agent / AI 问答依赖本地 `campus-kb/.env` 中的 `DEEPSEEK_API_KEY`（已 gitignore）；模型只做意图判断与语言组织，回答不替代规则引擎的确定性校验，且受检索质量限制；
-- 档案检索目前是关键词 + 字符 2-gram 打分，**不是语义检索**：没有向量化 / 重排序，同义改写可能召回不到。这是 RAG 下一步要补的核心短板；
+- 语义检索依赖本地 ONNX 模型（约 95MB，首次自动下载到本机缓存）；下载失败或设 `CAMPUS_EMBEDDING=off` 时自动降级纯 BM25，接口不会挂。向量索引是语料的派生物、未入库，可随时重建；尚未接入 reranker 重排序；
 - 公众号抓取只处理**自有账号**；长图型推文靠 Vision OCR 提取，存在少量形近字与切片接缝处的缺字，适合做检索语料，不适合直接引用出版；
 - `layout.json` 只是排版参数，尚未接入文档生成。
 
 ## 9. 下一步（主线：RAG 知识库 + Agent → 生成公众号文章）
 
-1. **RAG 检索升级（新的 P0）**：档案按段落分块 + 向量化（embedding）+ 相似度检索，补上语义召回短板；保留文件名 / 行号元数据以维持出处可溯。这是文章生成质量的地基——检索到好素材，才写得出好文章。
+1. **RAG 检索升级（✅ 已完成）**：段落分块（771 块，带起止行号）+ 本地 ONNX embedding + BM25 混合召回 + RRF 融合；语义召回经真实对比验证（换词提问「学生心理辅导去哪预约」命中「心理咨询预约信息卡」，纯关键词则混入无关档案）。下一步可做 reranker 重排序与分块质量抽样评估。
 2. **文章生成质量提升**：现已能产出可溯源草稿（✅ 完成）；下一步做多稿对比、段落级改写、按公众号风格微调语气，并接入成稿后的一键复核闭环。
 3. **公众号历史语料持续入库**：批量抓取往期推文，补齐选题、口径与活动记录，让 Agent 的答案与生成文章有更厚的依据；对 OCR 文本做抽样校对，重点看长图接缝处与形近字。
 4. **Agent 能力扩展**：增加只读工具（如规则版本对比、跨档案时间线），引入对话记忆持久化；稿件规范校验作为生成后的质量关卡继续保留。

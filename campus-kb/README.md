@@ -29,7 +29,7 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 94 个用例，含 bad 17 / good 0 基线断言与文章生成
+uv run pytest                                             # 109 个用例，含 bad 17 / good 0 基线、文章生成 15 项、语义检索 15 项
 ```
 
 | 接口 | 说明 |
@@ -37,13 +37,30 @@ uv run pytest                                             # 94 个用例，含 b
 | `GET /api/health` | 存活检查 |
 | `GET /api/rules` | 19 条规则 + 出处（total / skipped / rules[]） |
 | `POST /api/review` | `{ content, mode? }` → `{ findings[], counts, ruleCount }`；`mode=submission`（默认）全量规则，`mode=archive` 跳过投稿格式规则；finding.key 为 `ruleId@line`，同规则同行多次命中追加 `-2/-3` |
-| `GET /api/search?q=` | 语料库全文检索：关键词（空格分隔 AND）→ `{ total, scanned, results[{file,line,excerpt,hits}] }` |
+| `GET /api/search?q=&mode=` | 语料库混合检索（BM25 + 本地语义向量，RRF 融合）；`mode` 见下节 → `{ total, scanned, mode, retrieval, results[{file,line,endLine,excerpt,hits,score,similarity,matchedBy}] }` |
 | `POST /api/review-file` | 上传 `.docx` → `{ filename, text, findings[], counts, ruleCount, report }`；段落/表格文本提取后复用同一套规则，report 为 Markdown 报告 |
 | `POST /api/chat` | `{ message, history? }` → `{ answer, sources[], model }`；单轮 RAG 问答（保留兼容）。未配置密钥 503，上游失败 502 |
 | `POST /api/agent` | `{ message, history? }` → `{ answer, steps[], usedTools[], model, truncated? }`；DeepSeek Function Calling 自选 `search_rules` / `search_archive` / `review_draft`，工具在后端确定性执行后回灌。`steps` 为工具轨迹（工具名/参数/结构化结果），校验结论以规则引擎为准；循环上限 4 步 |
 | `POST /api/compose` | `{ topic }` → `{ article, markdown, sources[], citations, review, ... }`；文章生成主线：检索素材编号 → DeepSeek JSON 成稿（每段带 `[A#]` 引用）→ 后端校验出处（`grounded` / 无出处段 / 无效引用）+ `archive` 模式发前规范检查。无依据段落明确标注，不臆测 |
 
 AI 配置：复制 `.env.example` 为 `.env`，填入 `DEEPSEEK_API_KEY`（可选 `DEEPSEEK_MODEL` / `DEEPSEEK_BASE_URL`）。`.env` 已 gitignore，不会入库。未配置时仅 `/api/chat`、`/api/agent`、`/api/compose` 不可用，其他接口不受影响。
+
+## 语义检索（api/rag.py）
+
+`GET /api/search` 默认走混合召回：语料按段落分块（带文件名 + 起止行号），
+稀疏路 BM25（中文字符 2-gram）+ 稠密路本地 ONNX 向量，按 RRF 名次融合。
+`mode` 可选 `hybrid`（默认）/ `keyword`（仅 BM25）/ `semantic`（仅向量）/
+`strict`（旧的逐行 AND，留作回归对照）。响应的 `retrieval` 字段说明本次是否
+真的启用了语义路；每项结果的 `matchedBy` 标明是哪一路召回。
+
+稠密路用 `fastembed` + `BAAI/bge-small-zh-v1.5`（512 维），**本地推理、不调外部
+embedding API、不需要额外密钥**；模型首次使用从 `HF_ENDPOINT`（默认 hf-mirror.com）
+下载约 95MB 到本机缓存，之后 0.25s 加载。向量索引按语料版本戳缓存在
+`corpus/.index/`（已 gitignore），语料一变自动重建；首次建索引约 30s，之后每次
+检索 0.03–0.06s。模型下载失败或设 `CAMPUS_EMBEDDING=off` 时自动降级纯 BM25，
+接口不受影响。可选配置见 `.env.example`：`CAMPUS_EMBEDDING`、
+`CAMPUS_EMBEDDING_MODEL`、`HF_ENDPOINT`、`CAMPUS_INDEX_DIR`。
+单测默认关模型并用假向量注入，不依赖这 95MB 下载。
 
 severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为 `warn、info → warning`，`counts` 保留原始分档。决策见 `campus-portal/docs/adr-002-python-backend.md`。
 
@@ -54,7 +71,7 @@ severity 说明：引擎分 `error / warn / info` 三档；前端两档映射为
 
 自有公众号的历史推文是语料里最有价值的一块：口径、惯用表述、活动记录都在里面，
 且天然适合做 RAG 的资料源。`tools/fetch_wechat.py` 把文章转成和 `corpus/text/`
-同格式的纯文本，`search.py` 用 `glob("*.txt")` 扫目录，**入库即被检索，无需改代码**。
+同格式的纯文本，`search.py` 用 `glob("*.txt")` 扫目录，**入库即被检索，无需改代码**；语料文件版本戳变化会让向量索引自动重建，新推文同样无需重启。
 
 ```bash
 # 单篇
@@ -151,7 +168,7 @@ swiftc -O tools/ocr.swift -o tools/bin/ocr    # 首次需要编译，产物已 g
 ```
 campus-kb/
 ├── checker.py              # 校验引擎，新增规则不用改代码
-├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py + search.py）
+├── api/                    # FastAPI 薄封装（main.py + schemas.py + docx_io.py + deepseek.py + agent.py + compose.py + search.py + rag.py 混合检索）
 ├── tools/                  # 本地工具：文章抓取（fetch_wechat.py）+ 列表采集（collect_links.js）+ Vision OCR（ocr.swift）
 ├── tests/                  # API 契约与基线回归（pytest）
 ├── rules/                  # 规则库，全部来自规范原文

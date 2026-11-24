@@ -5,6 +5,7 @@ description = "校园投稿质量门 API：FastAPI 封装 checker.py 规则引�
 requires-python = ">=3.12"
 dependencies = [
     "fastapi>=0.115",
+    "fastembed>=0.9.1",
     "httpx>=0.28.1",
     "pydantic-settings>=2.16.3",
     "pymupdf>=2.1",

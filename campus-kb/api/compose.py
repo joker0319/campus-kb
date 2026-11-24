@@ -54,21 +54,15 @@ COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处�
 
 
 def _dedup_search(query: str, limit: int) -> list[dict]:
-    """按单个检索词检索，去重（同一 file+line 只留一条）。"""
-    out: list[dict] = []
-    seen: set[tuple[str, int]] = set()
-    for term in query.split():
-        try:
-            result = corpus_search.search(term, limit=limit)
-        except OSError:
-            continue
-        for r in result.get("results", []):
-            key = (r["file"], r["line"])
-            if key in seen:
-                continue
-            seen.add(key)
-            out.append(r)
-    return out
+    """整句混合检索（BM25 + 语义向量），不再拆词逐个 AND。
+
+    旧实现把 query 拆成词逐个查，语义路永远拿不到整句，换一种说法就召回不到
+    相关段落。现在整句入检，稀疏与稠密两路各取所需；去重交给 gather_material。
+    """
+    try:
+        return corpus_search.search(query, limit=limit, mode="hybrid").get("results", [])
+    except OSError:
+        return []
 
 
 def gather_material(topic: str, rules: list[dict]) -> tuple[list[dict], list[dict], dict]:
@@ -77,20 +71,28 @@ def gather_material(topic: str, rules: list[dict]) -> tuple[list[dict], list[dic
     返回 (blocks, rule_items, meta)。blocks 每项含 ref / kind / text / file / line。
     """
     terms = deepseek._terms(topic, limit=8)
-    # 主题整句优先，其次各检索词；再去重按命中数排序
-    queries = [topic] + terms[:5]
+    # 整句混合检索是主力：语义路负责换词召回，BM25 负责词面精确命中。
+    # 旧的「逐词 AND」会把「写一」「一篇」这类常见 2-gram 也拿去 BM25 查，
+    # 反而召回一堆无关素材；只有整句结果明显不足时才用主题词补。
     raw: list[dict] = []
     seen: set[tuple[str, int]] = set()
-    for q in queries:
-        for r in _dedup_search(q, MAX_PER_QUERY):
+
+    def collect(query: str, limit: int) -> None:
+        for r in _dedup_search(query, limit):
             key = (r["file"], r["line"])
             if key in seen:
                 continue
             seen.add(key)
             raw.append(r)
-        if len(raw) >= MAX_CONTEXT_BLOCKS:
-            break
-    raw.sort(key=lambda r: -r.get("hits", 0))
+
+    collect(topic, MAX_CONTEXT_BLOCKS)
+    if len(raw) < 8:
+        for term in terms[:5]:
+            if len(raw) >= MAX_CONTEXT_BLOCKS:
+                break
+            collect(term, MAX_PER_QUERY)
+    # score 是 RRF 融合分（跨路可比），hits 只是兼容旧结果的词面命中数
+    raw.sort(key=lambda r: -(r.get("score") or r.get("hits", 0)))
 
     blocks: list[dict] = []
     for r in raw[:MAX_CONTEXT_BLOCKS]:

@@ -173,28 +173,33 @@ def corpus_root(tmp_path: Path) -> Path:
 
 
 class TestSearch:
+    """旧「逐行 AND」检索的回归测试：显式 mode=strict，确保升级后旧契约仍可复现。
+
+    新的默认混合召回（BM25 + 语义向量）由 tests/test_rag.py 覆盖。
+    """
+
     def test_single_term(self, corpus_root: Path) -> None:
-        r = search("奠基", root=corpus_root)
+        r = search("奠基", root=corpus_root, mode="strict")
         assert r["total"] == 3
         assert r["scanned"] == 2
         assert r["results"][0]["file"] == "a"  # a 命中 2 行排前，name 为 stem
 
     def test_multi_term_is_and(self, corpus_root: Path) -> None:
-        r = search("于吉红 奠基", root=corpus_root)
+        r = search("于吉红 奠基", root=corpus_root, mode="strict")
         assert r["total"] == 1
         assert r["results"][0]["line"] == 2
 
     def test_case_insensitive(self, corpus_root: Path) -> None:
         (corpus_root / "c.txt").write_text("CityU(DG) held a ceremony\n", encoding="utf-8")
-        r = search("cityu", root=corpus_root)
+        r = search("cityu", root=corpus_root, mode="strict")
         assert r["total"] == 1
 
     def test_no_match(self, corpus_root: Path) -> None:
-        r = search("不存在的词", root=corpus_root)
+        r = search("不存在的词", root=corpus_root, mode="strict")
         assert r["total"] == 0 and r["results"] == []
 
     def test_empty_query(self, corpus_root: Path) -> None:
-        assert search("   ", root=corpus_root)["total"] == 0
+        assert search("   ", root=corpus_root, mode="strict")["total"] == 0
 
     def test_语料变更后无需重启即可检索(self, tmp_path: Path) -> None:
         """抓完新文章应当立刻能搜到：缓存 key 带文件版本戳，不能是纯路径缓存。"""
@@ -202,11 +207,11 @@ class TestSearch:
 
         target = tmp_path / "wx.txt"
         target.write_text("初始内容\n", encoding="utf-8")
-        assert search("初始内容", root=tmp_path)["total"] == 1
+        assert search("初始内容", root=tmp_path, mode="strict")["total"] == 1
 
         time.sleep(0.01)  # 保证 mtime_ns 变化
         target.write_text("初始内容\n新增的公众号段落\n", encoding="utf-8")
-        assert search("新增的公众号段落", root=tmp_path)["total"] == 1
+        assert search("新增的公众号段落", root=tmp_path, mode="strict")["total"] == 1
 
     def test_endpoint(self, client: TestClient, corpus_root: Path) -> None:
         # 端点走默认语料目录，用 monkeypatch 指向临时目录
@@ -214,7 +219,7 @@ class TestSearch:
         orig = m.corpus_search.corpus_dir
         m.corpus_search.corpus_dir = lambda: corpus_root  # type: ignore[assignment]
         try:
-            r = client.get("/api/search", params={"q": "奠基"})
+            r = client.get("/api/search", params={"q": "奠基", "mode": "strict"})
             assert r.status_code == 200
             assert r.json()["total"] == 3
         finally:

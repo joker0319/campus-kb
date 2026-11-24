@@ -1,14 +1,20 @@
-"""语料库全文检索。
+"""语料库检索：段落分块 + BM25 + 本地 embedding 混合召回（实现见 rag.py）。
 
-体量决定方案：corpus/text/ 目前 ~250KB、26 个文件，直接内存扫描即可精确命中，
-不上 FTS5/向量库（中文分词是 FTS5 的坑，体量又用不上 BM25 的相关性排序收益）。
-未来文件数量增长两个数量级再换 SQLite FTS5 trigram。
+体量决定方案：corpus/text/ 约 628KB / 50 个文件，切成数百个段落块后，
+内存里做 BM25 + 稠密向量检索足够快，不需要外部向量数据库。
+出处（文件名 + 起止行号）随每个块一路带到前端、Agent 与文章生成。
+
+兼容：search() 的返回结构保留 query/total/scanned/results 与每项的
+file/line/excerpt/hits，新增 endLine/score/similarity/matchedBy/retrieval。
+mode=strict 可复现旧的「多词 AND + 行级命中」行为，用于回归对照与回滚。
 """
 
 import os
 from dataclasses import dataclass
 from functools import lru_cache
 from pathlib import Path
+
+from . import rag
 
 KB = Path(__file__).resolve().parent.parent
 
@@ -25,7 +31,7 @@ def corpus_dir() -> Path:
 
 
 def _corpus_stamp(root: Path) -> int:
-    """语料目录版本戳：任一文件新增或改动都会变，用来让缓存失效。"""
+    """语料目录版本戳：任一文件新增或改动都会变，用来让缓存与向量索引失效。"""
     try:
         return max((p.stat().st_mtime_ns for p in root.glob("*.txt")), default=0)
     except OSError:
@@ -50,60 +56,23 @@ def _load_corpus(root: str, stamp: int) -> tuple[Doc, ...]:
     return tuple(docs)
 
 
-def _clip(line: str, pos: int, width: int = 40) -> str:
-    lo = max(0, pos - width)
-    hi = min(len(line), pos + width)
-    out = line[lo:hi].strip()
-    return ("…" if lo > 0 else "") + out + ("…" if hi < len(line) else "")
+def search(query: str, root: str | None = None, limit: int = 20, mode: str = "hybrid") -> dict:
+    """检索语料库，返回带文件名 + 行号出处的片段。
 
-
-def search(query: str, root: str | None = None, limit: int = 20) -> dict:
-    """多关键词 AND 检索（空格分隔，不区分大小写）。
-
-    返回按命中次数排序的行级结果，每行带文件名、行号与摘录，
-    前端据此回链到具体文件。
+    mode: hybrid（默认，BM25 + 语义向量 RRF 融合）/ keyword（仅 BM25）/
+          semantic（仅向量，模型不可用自动降级）/ strict（旧 AND 行为）。
     """
-    docs = load_corpus(str(Path(root)) if root else str(corpus_dir()))
-    terms = [t for t in query.split() if t]
-    if not terms:
-        return {"query": query, "total": 0, "scanned": len(docs), "results": []}
-
-    lterms = [t.lower() for t in terms]
-    results: list[dict] = []
-    for doc in docs:
-        low = doc.text.lower()
-        if not all(t in low for t in lterms):
-            continue
-        doc_hits = 0
-        lines_shown = 0
-        for i, line in enumerate(doc.text.split("\n"), 1):
-            ll = line.lower()
-            if not all(t in ll for t in lterms):
-                continue
-            first = min(ll.find(t) for t in lterms)
-            n = sum(ll.count(t) for t in lterms)
-            doc_hits += n
-            if lines_shown < 3:  # 每个文件最多展示 3 行，避免单文件刷屏
-                results.append({
-                    "file": doc.name,
-                    "line": i,
-                    "excerpt": _clip(line.strip(), first),
-                    "hits": n,
-                })
-                lines_shown += 1
-        if doc_hits:
-            results.append({
-                "file": doc.name,
-                "line": 0,  # 0 = 文件级汇总行
-                "excerpt": f"共命中 {doc_hits} 处",
-                "hits": doc_hits,
-            })
-
-    results.sort(key=lambda r: -r["hits"])
-    shown = [r for r in results if r["line"] != 0][:limit]
+    root_path = str(Path(root)) if root else str(corpus_dir())
+    stamp = _corpus_stamp(Path(root_path))
+    docs = load_corpus(root_path)
+    results = rag.hybrid_search(
+        query, docs, root=root_path, stamp=stamp, mode=mode, limit=limit
+    )
     return {
         "query": query,
-        "total": len(results) - sum(1 for r in results if r["line"] == 0),
+        "total": len(results),
         "scanned": len(docs),
-        "results": shown,
+        "mode": mode,
+        "retrieval": rag.status(docs, stamp, root_path),
+        "results": results,
     }

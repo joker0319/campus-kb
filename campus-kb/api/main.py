@@ -140,11 +140,17 @@ def review(req: ReviewRequest, engine: EngineDep) -> ReviewResponse:
 
 @app.get("/api/search")
 def search(
-    q: Annotated[str, Query(min_length=1, max_length=100, description="关键词，空格分隔为 AND")],
+    q: Annotated[str, Query(min_length=1, max_length=100, description="关键词或自然语言提问")],
     limit: Annotated[int, Query(ge=1, le=50)] = 20,
+    mode: Annotated[
+        str, Query(description="hybrid / keyword / semantic / strict")
+    ] = "hybrid",
 ) -> dict:
-    """语料库全文检索：关键词 → 文件名 + 行号 + 摘录。"""
-    return corpus_search.search(q, limit=limit)
+    """语料库混合检索：BM25 + 本地语义向量 → 文件名 + 行号 + 摘录 + 召回方式。
+
+    结果里的 retrieval 字段说明本次是否真的启用了语义路（模型缺失时自动降级 BM25）。
+    """
+    return corpus_search.search(q, limit=limit, mode=mode)
 
 
 @app.post("/api/review-file")
