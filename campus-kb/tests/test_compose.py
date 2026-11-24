@@ -172,6 +172,42 @@ class TestMarkdown:
         assert "配图建议" in md
 
 
+class TestTitleHints:
+    """职务对照表从 TITLE-001 规则生成，避免模型照抄素材里的泛称职务。"""
+
+    def test_builds_mapping_from_rule(self) -> None:
+        rules, _ = checker.load_rules()
+        hint = compose._title_hints(rules)
+        assert "李娟=副校长（学术）" in hint
+        assert "不算编造" in hint
+
+    def test_absent_rule_yields_empty(self) -> None:
+        assert compose._title_hints([{"id": "ENG-001"}]) == ""
+        assert compose._title_hints([]) == ""
+
+    def test_rule_without_people_yields_empty(self) -> None:
+        rules = [{"id": "TITLE-001", "params": {"people": []}}]
+        assert compose._title_hints(rules) == ""
+
+    def test_injected_into_system_prompt(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """成稿系统提示里必须带上职务口径，否则模型无从得知该补哪几个字。"""
+        (tmp_path / "news_WX.txt").write_text("港城莞举行开学典礼\n", encoding="utf-8")
+        monkeypatch.setenv("CAMPUS_CORPUS_DIR", str(tmp_path))
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        fake = _FakeAgentClient([
+            {"choices": [{"message": {"role": "assistant", "content": json.dumps(_article_payload(), ensure_ascii=False)}}]}
+        ])
+        rules, _ = checker.load_rules()
+
+        asyncio.run(compose.compose_article("写一篇开学典礼推文", rules, settings=settings, client=fake))
+
+        system = fake.calls[0]["json"]["messages"][0]["content"]
+        assert "【职务口径】" in system
+        assert "李娟=副校长（学术）" in system
+
+
 class TestComposeArticle:
     def test_without_key_returns_503(self, client: TestClient, monkeypatch: pytest.MonkeyPatch) -> None:
         monkeypatch.setattr(

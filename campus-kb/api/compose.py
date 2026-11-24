@@ -38,7 +38,10 @@ COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处�
 2. 素材库里没有的事实、数字、人名、日期一律不许写；宁可少写，不要编造或用常识补全。
 3. 如果素材不足以支撑某个部分，在该部分写「（素材不足，待补充）」，不要虚构。
 4. 语言符合公众号文风：标题抓人但不夸张，导语短，正文分小标题，段落简洁。
-5. 遵守给出的【写作规范】：标题与正文中校名首次出现写全称「香港城市大学（东莞）」，不要用「港城大」这类简称；中文用全角标点。
+5. 遵守给出的【写作规范】：标题与正文中校名首次出现写全称「香港城市大学（东莞）」，不要用「港城大」这类简称；
+   集体提法「港澳台」必须写成「港澳台地区」或「港澳台同胞」，不能光写「港澳台」；
+   校领导姓名旁边要带职务全称（如「执行校长鲁春教授」「副校长（学术）李娟教授」），不要只写「副校长」；
+   中文用全角标点。
 6. 输出严格的 JSON（不要 markdown 代码块），结构如下：
 {
   "title": "文章标题",
@@ -65,7 +68,33 @@ REVISE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的
 {"title": "", "lead": "", "sections": [{"heading": "", "paragraphs": [{"text": "", "cites": []}]}], "imageSuggestions": [{"after": "", "description": ""}]}
 6. 遵守【写作规范】与【口径约束】；标题与正文里校名首次出现写全称「香港城市大学（东莞）」，
    不要为了标题简短改成「港城大」等简称。
+7. 改稿时顺手守住两条口径：「港澳台」写全为「港澳台地区」/「港澳台同胞」；校领导姓名旁带职务全称。
 """
+
+
+def _title_hints(rules: list[dict]) -> str:
+    """从 TITLE-001 规则生成「人物 → 规范职务」对照，附在系统提示里。
+
+    素材原文常只写「副校长李娟教授」，模型照抄就踩 TITLE-001（少限定语）。硬编码
+    一份对照表迟早和 rules 脱节，这里直接读规则里的 people/must_near 映射，规则改
+    了提示自动跟着改。没有该规则时返回空串，不影响别的场景。
+    """
+    for rule in rules or []:
+        if rule.get("id") != "TITLE-001":
+            continue
+        people = (rule.get("params") or {}).get("people") or []
+        pairs = [
+            f"{p['name']}={p['must_near'][0]}"
+            for p in people
+            if p.get("name") and p.get("must_near")
+        ]
+        if pairs:
+            return (
+                "【职务口径】素材里这些人的规范职务为 "
+                + "、".join(pairs)
+                + "。素材只写「副校长」「协理副校长」这类泛称时，按此补全限定语，属于规范要求，不算编造。\n"
+            )
+    return ""
 
 
 def _dedup_search(query: str, limit: int) -> list[dict]:
@@ -394,7 +423,7 @@ async def compose_article(
     meta["style"] = spec["id"]
     context = build_context(blocks, rule_items)
     user_prompt = f"请围绕选题写公众号文章草稿。\n选题：{topic}\n\n{context}"
-    system_prompt = f"{COMPOSE_SYSTEM_PROMPT}\n\n{styles.style_block(spec)}"
+    system_prompt = f"{COMPOSE_SYSTEM_PROMPT}\n\n{_title_hints(rules)}{styles.style_block(spec)}"
 
     article = await _call_model_json(cfg, system_prompt, user_prompt, client)
 
@@ -444,7 +473,7 @@ async def revise_article(
         f"【当前草稿】\n{json.dumps(article, ensure_ascii=False, indent=2)}\n\n"
         f"{context}"
     )
-    system_prompt = f"{REVISE_SYSTEM_PROMPT}\n\n{styles.style_block(spec)}"
+    system_prompt = f"{REVISE_SYSTEM_PROMPT}\n\n{_title_hints(rules)}{styles.style_block(spec)}"
 
     revised = await _call_model_json(cfg, system_prompt, user_prompt, client)
     # 模型偶发返回空结构：保留原稿，不要拿空白覆盖用户已认可的版本
