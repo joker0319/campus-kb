@@ -541,3 +541,91 @@ describe('写文章页 — 流式成稿', () => {
     expect(alert.textContent).toContain('模型返回内容不完整');
   });
 });
+
+describe('写文章页 — 一键流水线', () => {
+  const PIPELINE_RESULT: ComposeResult = {
+    ...RESULT,
+    pipeline: {
+      autoRevise: true,
+      revisions: [
+        {
+          instruction: '把校名写全称',
+          before: { error: 1, warn: 0 },
+          after: { error: 0, warn: 0 },
+        },
+      ],
+      finalCounts: { total: 0, error: 0, warn: 0, info: 0 },
+    },
+  };
+
+  function mockPipeline() {
+    return vi.fn((input: RequestInfo | URL, _init?: RequestInit) => {
+      const url = urlOf(input);
+      if (url.includes('/api/pipeline/stream')) {
+        const articleJson = JSON.stringify(RESULT.article);
+        const cut = Math.max(1, Math.floor(articleJson.length / 2));
+        const frames =
+          `data: ${JSON.stringify({
+            type: 'meta',
+            style: RESULT.style,
+            steps: [
+              { id: 'retrieve', label: '检索语料' },
+              { id: 'compose', label: 'Agent 成稿' },
+              { id: 'review', label: '发前检查' },
+              { id: 'export', label: '排版导出' },
+            ],
+            sourceCount: 12,
+          })}\n\n` +
+          `data: ${JSON.stringify({ type: 'step', id: 'retrieve', label: '检索语料', detail: '命中 12 条素材' })}\n\n` +
+          `data: ${JSON.stringify({ type: 'delta', text: articleJson.slice(0, cut) })}\n\n` +
+          `data: ${JSON.stringify({ type: 'step', id: 'compose', label: 'Agent 成稿', detail: '完成 1 个段落' })}\n\n` +
+          `data: ${JSON.stringify({ type: 'delta', text: articleJson.slice(cut) })}\n\n` +
+          `data: ${JSON.stringify({ type: 'step', id: 'review', label: '发前检查', detail: '1 错 / 0 警' })}\n\n` +
+          `data: ${JSON.stringify({ type: 'step', id: 'revise', label: '自动修订', detail: '修正 1 项' })}\n\n` +
+          `data: ${JSON.stringify({ type: 'step', id: 'export', label: '排版导出', detail: 'HTML 已就绪' })}\n\n` +
+          `data: ${JSON.stringify({ type: 'done', result: PIPELINE_RESULT })}\n\n`;
+        return Promise.resolve(
+          new Response(frames, { status: 200, headers: { 'Content-Type': 'text/event-stream' } }),
+        );
+      }
+      return Promise.resolve(jsonResponse(PIPELINE_RESULT));
+    });
+  }
+
+  afterEach(() => {
+    vi.unstubAllGlobals();
+  });
+
+  it('一键成稿按钮走 pipeline 接口并带 autoRevise', async () => {
+    const fetchMock = mockPipeline();
+    vi.stubGlobal('fetch', fetchMock);
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '一键成稿' }));
+
+    await waitFor(() => expect(screen.getByText('港城莞科研新进展')).toBeTruthy());
+    const call = fetchMock.mock.calls.find(([input]) => urlOf(input).includes('/pipeline/stream'));
+    expect(bodyOf(call?.[1])).toEqual({
+      topic: '写一篇科研进展推文',
+      style: 'auto',
+      autoRevise: true,
+    });
+  });
+
+  it('成稿后显示自动修订标记', async () => {
+    vi.stubGlobal('fetch', mockPipeline());
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '一键成稿' }));
+
+    await waitFor(() => expect(screen.getByText(/已自动修订 1 轮/)).toBeTruthy());
+  });
+
+  it('初始态说明文案体现一键串联', () => {
+    render(<Compose />);
+    expect(screen.getByText(/输入一句话，助手自动检索、成稿/)).toBeTruthy();
+    expect(screen.getByText(/有问题自动修订一轮/)).toBeTruthy();
+  });
+});

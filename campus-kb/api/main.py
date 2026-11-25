@@ -27,6 +27,7 @@ from . import deepseek  # noqa: E402
 from .compose import compose_article, compose_article_stream, revise_article  # noqa: E402
 from . import docx_io  # noqa: E402
 from . import figures  # noqa: E402
+from . import pipeline  # noqa: E402
 from . import search as corpus_search  # noqa: E402
 
 from .schemas import (  # noqa: E402
@@ -38,6 +39,7 @@ from .schemas import (  # noqa: E402
     ComposeResponse,
     Counts,
     Finding,
+    PipelineRequest,
     ReviewFileResponse,
     ReviewRequest,
     ReviewResponse,
@@ -328,6 +330,49 @@ async def compose_stream(req: ComposeRequest, engine: EngineDep) -> StreamingRes
             "Cache-Control": "no-cache",
             "Connection": "keep-alive",
             # 关掉 nginx 一类反代的缓冲，否则增量会被攒着一起下发
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
+@app.post("/api/pipeline/stream")
+async def pipeline_stream(req: PipelineRequest, engine: EngineDep) -> StreamingResponse:
+    """一键成稿（SSE）：检索 → 成稿 → 发前检查 → 自动修订 → 导出，全程可见。
+
+    事件序列：`meta`（步骤清单 + 文体）→ `step`（每步完成）与 `delta`（成稿增量）
+    交错 → `done`（完整结果，字段同 `/api/compose`，另带 pipeline 轨迹）。
+    error 级规范命中时自动修订一轮，避免把稿子的问题留给用户兜底。
+    出错不换 HTTP 状态（响应已开始），改发 `error` 事件。
+    """
+    if not deepseek.get_settings().configured:
+        raise HTTPException(
+            status_code=503,
+            detail="未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥",
+        )
+
+    async def frames():
+        try:
+            async for event in pipeline.run_pipeline_stream(
+                req.topic, engine[0], style=req.style, auto_revise=req.autoRevise
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except (
+            deepseek.DeepSeekUnavailable,
+            deepseek.DeepSeekNotConfigured,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            payload = {"type": "error", "message": str(exc)}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
             "X-Accel-Buffering": "no",
         },
     )

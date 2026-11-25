@@ -360,6 +360,34 @@ export interface ComposeResult {
   readonly style: ComposeStyle;
   readonly figures?: readonly ComposeFigure[];
   readonly model: string;
+  /** 一键流水线轨迹：普通成稿无此字段 */
+  readonly pipeline?: PipelineTrace;
+}
+
+export interface PipelineTrace {
+  readonly autoRevise: boolean;
+  readonly revisions: readonly {
+    readonly instruction: string;
+    readonly before: { readonly error: number; readonly warn: number };
+    readonly after: { readonly error: number; readonly warn: number };
+  }[];
+  readonly finalCounts: {
+    readonly total: number;
+    readonly error: number;
+    readonly warn: number;
+    readonly info: number;
+  };
+}
+
+/** 流水线步骤定义（meta 里给 planned，step 事件给完成态） */
+export interface PipelineStepDef {
+  readonly id: string;
+  readonly label: string;
+}
+
+export interface PipelineStepEvent extends PipelineStepDef {
+  readonly detail: string;
+  readonly review?: ComposeResult['review'];
 }
 
 /** 文章生成：选题 + 文体 → 检索知识库成稿 → 出处与规范校验；失败时透传后端 detail。 */
@@ -462,6 +490,97 @@ export async function streamCompose(
   }
 
   if (!box.result) throw new Error('生成中断，没有收到完整稿件');
+  return box.result;
+}
+
+export interface PipelineStreamHandlers {
+  /** 首帧：文体、计划步骤、检索到的素材数 */
+  onMeta?: (style: ComposeStyle, steps: readonly PipelineStepDef[], sourceCount: number) => void;
+  /** 某一步完成（含详情；review 步带完整校验结果） */
+  onStep?: (step: PipelineStepEvent) => void;
+  /** 成稿模型原文增量 */
+  onDelta?: (text: string) => void;
+}
+
+type PipelineStreamEvent = {
+  type?: string;
+  style?: ComposeStyle;
+  steps?: readonly PipelineStepDef[];
+  sourceCount?: number;
+  step?: PipelineStepEvent;
+  text?: string;
+  result?: ComposeResult;
+  message?: string;
+};
+
+/**
+ * 一键成稿：检索 → 成稿 → 发前检查 → 自动修订 → 导出，全程 SSE 回调。
+ * done 结果与 streamCompose 同结构，额外带 pipeline 轨迹。
+ */
+export async function streamPipeline(
+  topic: string,
+  style: ComposeStyleId = 'auto',
+  handlers: PipelineStreamHandlers = {},
+  autoRevise = true,
+  signal?: AbortSignal,
+): Promise<ComposeResult> {
+  const r = await fetch('/api/pipeline/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ topic, style, autoRevise }),
+    signal,
+  });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `一键成稿接口返回 ${r.status}`);
+  }
+  if (!r.body) throw new Error('当前浏览器不支持流式读取');
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  const box: { result: ComposeResult | null } = { result: null };
+  let buffer = '';
+
+  const handle = (frame: string) => {
+    const line = frame.split('\n').find((ln) => ln.startsWith('data:'));
+    if (!line) return;
+    let event: PipelineStreamEvent;
+    try {
+      event = JSON.parse(line.slice(5).trim()) as PipelineStreamEvent;
+    } catch {
+      return;
+    }
+    if (event.type === 'meta' && event.style) {
+      handlers.onMeta?.(event.style, event.steps ?? [], event.sourceCount ?? 0);
+    } else if (event.type === 'step' && event.step) {
+      handlers.onStep?.(event.step);
+    } else if (event.type === 'delta' && event.text) {
+      handlers.onDelta?.(event.text);
+    } else if (event.type === 'done' && event.result) {
+      box.result = event.result;
+    } else if (event.type === 'error') {
+      throw new Error(event.message || '一键成稿失败，请重试');
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut = buffer.indexOf('\n\n');
+      while (cut >= 0) {
+        const frame = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        handle(frame);
+        cut = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!box.result) throw new Error('成稿中断，没有收到完整结果');
   return box.result;
 }
 

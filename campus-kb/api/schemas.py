@@ -204,3 +204,11 @@ class ReviseRequest(BaseModel):
 
 class ReviseResponse(ComposeResponse):
     instruction: str
+
+
+class PipelineRequest(ComposeRequest):
+    """一键流水线请求：比普通成稿多一个「是否自动修订」开关。"""
+
+    autoRevise: bool = Field(
+        default=True, description="发前检查有 error 时是否自动修订一轮"
+    )
