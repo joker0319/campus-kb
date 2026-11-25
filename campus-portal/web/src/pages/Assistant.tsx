@@ -1,5 +1,6 @@
 import { useEffect, useRef, useState } from 'react';
 import { postAgent, type AgentResult, type ChatTurn } from '../lib/api';
+import { SoftBackdrop } from '../components/SoftBackdrop';
 import s from '../styles/assistant.module.css';
 
 type Turn = {
@@ -90,6 +91,7 @@ export default function Assistant() {
 
   return (
     <div className={s.page}>
+      <SoftBackdrop />
       <header className={s.bar}>
         <a className={s.back} href="#/">
           ← 返回首页

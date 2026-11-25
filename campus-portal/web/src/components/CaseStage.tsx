@@ -1,11 +1,11 @@
 import { useEffect, useState } from 'react';
 import type { MouseEvent } from 'react';
 import { CASES } from '../data/cases';
-import { segments } from '../lib/segments';
 import s from '../styles/case.module.css';
 
 const INTERVAL = 5600;
 
+/** 首页 3D 卡堆轮播：展示 RAG → Agent → 可直发成稿的链路，而非校稿命中案例。 */
 export function CaseStage() {
   const [i, setI] = useState(0);
   const [paused, setPaused] = useState(false);
@@ -47,32 +47,32 @@ export function CaseStage() {
           <div className={s.ghost2} aria-hidden="true" />
           <div className={s.ghost} aria-hidden="true" />
 
-          <article className={s.sheet} key={cur.id} aria-label={`校验案例 ${cur.id}：${cur.name}`}>
+          <article className={s.sheet} key={cur.id} aria-label={`成稿链路 ${cur.id}：${cur.name}`}>
             <header className={s.head}>
-              <span className={s.file}>投稿正文 · 第 {cur.line} 行</span>
+              <span className={s.file}>成稿链路 · {cur.phase}</span>
               <span className={s.ruleId}>{cur.id}</span>
             </header>
 
             <div className={s.body}>
-              <span className={s.gutter}>{cur.line}</span>
-              <p className={s.text}>
-                {segments(cur.before, cur.hits).map((g, k) =>
-                  g.hit ? (
-                    <mark key={k} className={s.mark}>
-                      {g.t}
-                    </mark>
-                  ) : (
-                    <span key={k}>{g.t}</span>
-                  ),
-                )}
-              </p>
+              <span className={s.gutter}>{cur.step}</span>
+              <div className={s.main}>
+                <h3 className={s.sheetTitle}>{cur.name}</h3>
+                <p className={s.sheetLead}>{cur.lead}</p>
+                <ul className={s.points}>
+                  {cur.points.map((point) => (
+                    <li className={s.point} key={point}>
+                      {point}
+                    </li>
+                  ))}
+                </ul>
+              </div>
             </div>
 
             <div className={s.fix}>
-              <span className={s.fixKey}>改法</span>
+              <span className={s.fixKey}>产出</span>
               <div>
-                <p className={s.fixText}>{cur.after}</p>
-                <p className={s.why}>{cur.why}</p>
+                <p className={s.fixText}>{cur.output}</p>
+                <p className={s.why}>{cur.note}</p>
               </div>
             </div>
 
@@ -92,7 +92,7 @@ export function CaseStage() {
               type="button"
               className={s.dot}
               onClick={() => setI(k)}
-              aria-label={`切到案例 ${k + 1}：${c.id} ${c.name}`}
+              aria-label={`切到第 ${k + 1} 帧：${c.phase} ${c.name}`}
               aria-current={k === i ? 'true' : undefined}
             />
           ))}

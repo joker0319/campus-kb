@@ -9,6 +9,7 @@ import {
   type ComposeStyleId,
 } from '../lib/api';
 import { readPartial } from '../lib/partialArticle';
+import { SoftBackdrop } from '../components/SoftBackdrop';
 import s from '../styles/compose.module.css';
 
 const SUGGESTIONS = [
@@ -303,6 +304,7 @@ export default function Compose() {
 
   return (
     <div className={s.page}>
+      <SoftBackdrop />
       <header className={s.bar}>
         <a className={s.back} href="#/">
           ← 返回首页

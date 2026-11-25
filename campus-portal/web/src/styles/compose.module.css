@@ -1,20 +1,25 @@
-/* 写文章页 —— B 类工作台：克制、无渐变，遵循 tokens.css */
+/* 写文章页 —— 与首页同源的柔和语汇 + 左右分栏的工作区 */
 
 .page {
   height: 100%;
   display: flex;
   flex-direction: column;
+  position: relative;
+  isolation: isolate;
   background: var(--paper);
   color: var(--ink);
 }
 
 .bar {
+  position: relative;
+  z-index: 1;
   display: flex;
   align-items: center;
   gap: 14px;
-  padding: 16px clamp(20px, 5vw, 48px);
-  border-bottom: 1px solid var(--line);
-  background: var(--surface);
+  padding: 14px clamp(20px, 5vw, 48px);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
 }
 .back {
   font-size: 13px;
@@ -37,6 +42,8 @@
 
 /* 未提交时右栏完全收起，左栏独占；提交后才切成左右双栏 */
 .work {
+  position: relative;
+  z-index: 1;
   flex: 1;
   min-height: 0;
   display: flex;
@@ -49,11 +56,12 @@
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: clamp(20px, 3vw, 34px) clamp(18px, 2.2vw, 30px) 56px;
-  background: var(--surface);
+  background: var(--glass);
+  backdrop-filter: blur(8px);
 }
 .workSplit .left {
   flex: 0 0 clamp(340px, 32vw, 452px);
-  border-right: 1px solid var(--line);
+  border-right: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
 .stage {
@@ -63,7 +71,7 @@
   display: flex;
   flex-direction: column;
   overflow: hidden;
-  background: var(--paper);
+  background: transparent;
 }
 /* 顶部草稿栏固定在右栏最上方，不参与文章滚动 */
 .stageBar {
@@ -71,9 +79,10 @@
   display: flex;
   align-items: center;
   gap: 10px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--line);
-  background: var(--sunk);
+  padding: 14px clamp(18px, 3vw, 40px);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
   flex-wrap: wrap;
   z-index: 3;
 }
@@ -128,8 +137,10 @@
 /* 输入区 */
 .inputCard {
   background: var(--surface);
-  border: 1px solid var(--line);
-  padding: 20px 22px;
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-soft);
+  padding: 22px 24px;
   margin-bottom: 22px;
 }
 .label {
@@ -144,6 +155,7 @@
   min-height: 96px;
   resize: vertical;
   border: 1px solid var(--line);
+  border-radius: var(--r-sm);
   background: var(--paper);
   color: var(--ink);
   font-family: var(--sans);
@@ -171,14 +183,19 @@
   background: var(--brand);
   color: #fff;
   border: none;
+  border-radius: 12px;
   padding: 11px 24px;
   font-size: 14px;
   font-weight: 700;
   cursor: pointer;
   font-family: var(--sans);
+  transition:
+    transform 160ms var(--ease),
+    box-shadow 160ms var(--ease);
 }
 .generate:hover:not(:disabled) {
-  opacity: 0.9;
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lift);
 }
 .generate:disabled {
   opacity: 0.45;
@@ -197,6 +214,7 @@
 .suggest {
   background: var(--sunk);
   border: 1px solid var(--line);
+  border-radius: 999px;
   color: var(--ink-2);
   font-size: 12px;
   padding: 6px 12px;
@@ -213,10 +231,11 @@
 }
 
 .error {
-  border: 1px solid var(--err);
+  border: 1px solid color-mix(in srgb, var(--err) 35%, transparent);
+  border-radius: var(--r);
   background: var(--err-tint);
   color: var(--err);
-  padding: 12px 14px;
+  padding: 14px 16px;
   font-size: 13px;
   margin-bottom: 20px;
 }
@@ -224,7 +243,10 @@
 /* 结果区 */
 .result {
   background: var(--surface);
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
 }
 .resultTitle {
   font-size: 13px;
@@ -280,8 +302,9 @@
 .copyBtn,
 .downloadBtn {
   font-size: 12px;
-  padding: 6px 12px;
+  padding: 6px 13px;
   border: 1px solid var(--line);
+  border-radius: 999px;
   background: var(--surface);
   color: var(--ink);
   cursor: pointer;
@@ -455,8 +478,11 @@ details[open] .dSummary::before {
 }
 .drafts {
   border: 1px solid var(--line);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-soft);
   background: var(--surface);
   margin-bottom: 20px;
+  overflow: hidden;
 }
 .draftsHead {
   display: flex;
@@ -599,8 +625,9 @@ details[open] .dSummary::before {
 }
 .reviseChip {
   font-size: 12px;
-  padding: 3px 10px;
+  padding: 4px 11px;
   border: 1px solid var(--line-2);
+  border-radius: 999px;
   background: var(--surface);
   color: var(--ink-2);
   cursor: pointer;
@@ -669,6 +696,7 @@ details[open] .dSummary::before {
   font-size: 12px;
   padding: 4px 11px;
   border: 1px solid var(--line);
+  border-radius: 999px;
   background: var(--surface);
   color: var(--ink-2);
   cursor: pointer;

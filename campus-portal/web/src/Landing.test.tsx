@@ -22,10 +22,12 @@ describe('首页', () => {
     expect(screen.queryByText('规划中')).toBeNull();
     expect(screen.queryByText(/典型问题命中/)).toBeNull();
 
-    // 轮播（真实命中案例）保留在 hero 右栏
+    // 轮播按 RAG → Agent → 可直发成稿的链路组织，放在 hero 右栏
     const stage = document.querySelector('[class*="heroStage"]');
     expect(stage).not.toBeNull();
     expect(stage?.querySelector('[class*="sheet"]')).not.toBeNull();
+    expect(screen.getByText('STAGE-01')).toBeTruthy();
+    expect(screen.getByText('语料进库，先有据可查')).toBeTruthy();
   });
 
   it('导航与 CTA 指向写文章、助手和校稿台，顶栏提供返回', async () => {

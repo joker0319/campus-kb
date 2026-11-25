@@ -1,4 +1,4 @@
-/* 首页 hero 的 3D 稿件卡堆 —— 纯 CSS 3D，不用 three.js
+/* 首页 hero 的 3D 链路卡堆 —— 纯 CSS 3D，不用 three.js
    transform-style: preserve-3d 只在 stage/deck 上开，
    叶子节点全部拍平，避免 Safari 的层化与 1px 缝隙问题。 */
 
@@ -24,7 +24,7 @@
 .ghost2 {
   position: absolute;
   inset: 0;
-  border-radius: 12px;
+  border-radius: var(--r-lg);
   background: var(--surface);
   box-shadow: 0 0 0 1px var(--line);
 }
@@ -40,8 +40,8 @@
 .sheet {
   position: relative;
   background: var(--surface);
-  border-radius: 12px;
-  padding: 19px 24px 16px;
+  border-radius: var(--r-lg);
+  padding: 22px 26px 18px;
   transform: translateZ(18px);
   box-shadow:
     0 30px 64px -26px rgba(25, 25, 23, 0.36),
@@ -97,6 +97,47 @@
   padding-top: 6px;
   text-align: right;
   user-select: none;
+}
+.main {
+  min-width: 0;
+}
+.sheetTitle {
+  font-family: var(--serif);
+  font-size: clamp(18px, 1.6vw, 22px);
+  line-height: 1.35;
+  color: var(--ink);
+  margin: 0 0 8px;
+}
+.sheetLead {
+  margin: 0;
+  font-size: 13px;
+  line-height: 1.75;
+  color: var(--ink-2);
+}
+.points {
+  list-style: none;
+  margin: 14px 0 0;
+  display: flex;
+  flex-direction: column;
+  gap: 7px;
+}
+.point {
+  position: relative;
+  padding-left: 15px;
+  font-size: 12.5px;
+  line-height: 1.6;
+  color: var(--ink-2);
+}
+.point::before {
+  content: '';
+  position: absolute;
+  left: 0;
+  top: 9px;
+  width: 5px;
+  height: 5px;
+  border-radius: 50%;
+  background: var(--brand);
+  opacity: 0.65;
 }
 .text {
   margin: 0;
@@ -223,8 +264,10 @@
   .sheet {
     padding: 13px 15px 12px;
   }
-  .text {
-    font-size: 13.5px;
-    line-height: 1.9;
+  .sheetLead {
+    font-size: 12.5px;
+  }
+  .point {
+    font-size: 12px;
   }
 }
