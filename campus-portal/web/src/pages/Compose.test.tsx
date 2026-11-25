@@ -151,6 +151,33 @@ describe('写文章页', () => {
     expect(screen.getByRole('button', { name: '生成文章' })).toBeTruthy();
   });
 
+  it('左右分栏：左侧固定选题，右侧初始是待生成空态', () => {
+    render(<Compose />);
+    const left = screen.getByRole('complementary', { name: '选题与设置' });
+    const right = screen.getByRole('region', { name: '文章预览' });
+    expect(within(left).getByLabelText('文章选题输入框')).toBeTruthy();
+    expect(within(right).getByText('文章会出现在这里')).toBeTruthy();
+    expect(within(right).queryByText('港城莞科研新进展')).toBeNull();
+  });
+
+  it('提交选题后自动唤起右栏显示草稿，左栏保持可见', async () => {
+    const user = userEvent.setup();
+    render(<Compose />);
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+
+    const right = screen.getByRole('region', { name: '文章预览' });
+    await waitFor(() => {
+      expect(within(right).getByText('港城莞科研新进展')).toBeTruthy();
+    });
+    expect(within(right).queryByText('文章会出现在这里')).toBeNull();
+    expect(
+      within(screen.getByRole('complementary', { name: '选题与设置' })).getByLabelText(
+        '文章选题输入框',
+      ),
+    ).toBeTruthy();
+  });
+
   it('选题过短时生成按钮禁用', () => {
     render(<Compose />);
     const button = screen.getByRole<HTMLButtonElement>('button', { name: '生成文章' });

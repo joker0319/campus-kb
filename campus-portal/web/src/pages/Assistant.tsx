@@ -121,18 +121,20 @@ export default function Assistant() {
                 帮你写出能用的公众号文章，并展示依据来自哪里。
               </p>
               <div className={s.suggestList} role="group" aria-label="示例提问">
-                {['帮我写一段介绍学校最新科研进展的推文', '档案里记载了奠基仪式的哪些信息？'].map((q) => (
-                  <button
-                    type="button"
-                    key={q}
-                    className={s.suggest}
-                    onClick={() => {
-                      setDraft(q);
-                    }}
-                  >
-                    {q}
-                  </button>
-                ))}
+                {['帮我写一段介绍学校最新科研进展的推文', '档案里记载了奠基仪式的哪些信息？'].map(
+                  (q) => (
+                    <button
+                      type="button"
+                      key={q}
+                      className={s.suggest}
+                      onClick={() => {
+                        setDraft(q);
+                      }}
+                    >
+                      {q}
+                    </button>
+                  ),
+                )}
               </div>
             </section>
           )}
