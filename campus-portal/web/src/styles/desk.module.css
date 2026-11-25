@@ -2,6 +2,10 @@
   height: 100dvh;
   display: grid;
   grid-template-rows: 52px minmax(0, 1fr) 33px;
+  /* 氛围层放在 -1，靠 isolation 关在本页自己的层叠上下文里 */
+  position: relative;
+  isolation: isolate;
+  background: transparent;
 }
 
 /* ───────── 顶栏 ───────── */
@@ -10,15 +14,17 @@
   align-items: center;
   gap: 16px;
   padding: 0 16px 0 14px;
-  background: var(--surface);
-  border-bottom: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   position: relative;
   z-index: 5;
 }
 .crest {
   width: 26px;
   height: 26px;
-  border-radius: 7px;
+  border-radius: 9px;
+  box-shadow: 0 4px 12px color-mix(in srgb, var(--brand) 26%, transparent);
   display: grid;
   place-items: center;
   background: var(--brand);
@@ -43,7 +49,7 @@
 .barSep {
   width: 1px;
   height: 18px;
-  background: var(--line);
+  background: color-mix(in srgb, var(--line) 80%, transparent);
   margin: 0 2px;
 }
 .docChip {
@@ -52,9 +58,9 @@
   gap: 7px;
   height: 28px;
   padding: 0 10px 0 8px;
-  border: 1px solid var(--line);
-  border-radius: 7px;
-  background: var(--paper);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: var(--r-sm);
+  background: color-mix(in srgb, var(--paper) 78%, transparent);
   font-size: 12px;
   color: var(--ink-2);
   font-variant-numeric: tabular-nums;
@@ -69,7 +75,7 @@
   letter-spacing: 0.02em;
   color: #1b4f9c;
   background: #eaf0fb;
-  border-radius: 3px;
+  border-radius: 5px;
   padding: 2px 3px;
   line-height: 1;
 }
@@ -83,39 +89,46 @@
   display: none;
 }
 .btn {
-  height: 28px;
-  padding: 0 11px;
-  border-radius: 7px;
+  height: 30px;
+  padding: 0 13px;
+  border-radius: var(--r-sm);
   font-size: 12px;
   font-weight: 500;
   display: inline-flex;
   align-items: center;
   gap: 6px;
-  border: 1px solid var(--line);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   color: var(--ink-2);
-  background: var(--surface);
+  background: var(--glass);
   transition:
     background 0.15s,
     border-color 0.15s,
-    color 0.15s;
+    color 0.15s,
+    transform 160ms var(--ease),
+    box-shadow 160ms var(--ease);
 }
 .btn:hover {
-  background: var(--sunk);
-  border-color: #d8d4c9;
+  background: var(--surface);
+  border-color: color-mix(in srgb, var(--line) 90%, transparent);
   color: var(--ink);
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-soft);
 }
 .btn:active {
-  background: #f0eee7;
+  background: var(--sunk);
+  transform: none;
 }
 .btnPrimary {
   background: var(--brand);
   border-color: var(--brand);
   color: #fff;
+  box-shadow: 0 6px 16px color-mix(in srgb, var(--brand) 22%, transparent);
 }
 .btnPrimary:hover {
   background: #7a1828;
   border-color: #7a1828;
   color: #fff;
+  box-shadow: var(--shadow-lift);
 }
 .who {
   width: 26px;
@@ -123,8 +136,8 @@
   border-radius: 50%;
   display: grid;
   place-items: center;
-  background: var(--sunk);
-  border: 1px solid var(--line);
+  background: var(--glass);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   font-size: 11px;
   color: var(--ink-2);
   font-weight: 600;
@@ -135,7 +148,9 @@
   display: grid;
   grid-template-columns: 60px minmax(0, 1fr) 366px 320px;
   min-height: 0;
-  background: var(--surface);
+  gap: 12px;
+  padding: 12px 14px 14px;
+  background: transparent;
 }
 .workspaceNoEvidence {
   grid-template-columns: 60px minmax(0, 1fr) 366px;
@@ -150,8 +165,11 @@
 
 /* 左栏 */
 .rail {
-  background: var(--rail);
-  border-right: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r-sm);
+  box-shadow: var(--shadow-soft);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -161,7 +179,7 @@
 .railItem {
   width: 44px;
   height: 44px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -191,7 +209,11 @@
 
 /* ───────── 稿件 ───────── */
 .doc {
-  background: var(--paper);
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-soft);
   overflow-y: auto;
   min-height: 0;
   position: relative;
@@ -204,9 +226,9 @@
   align-items: center;
   gap: 10px;
   padding: 9px 20px;
-  border-bottom: 1px solid var(--line-2);
-  background: rgba(252, 251, 248, 0.92);
-  backdrop-filter: blur(6px);
+  border-bottom: 1px solid color-mix(in srgb, var(--line-2) 75%, transparent);
+  background: color-mix(in srgb, var(--paper) 88%, transparent);
+  backdrop-filter: blur(10px);
 }
 .docHead .dhT {
   font-size: 11.5px;
@@ -257,8 +279,12 @@
 
 .sheet {
   max-width: 672px;
-  margin: 0 auto;
+  margin: 22px auto;
   padding: 34px 40px 90px;
+  background: color-mix(in srgb, var(--surface) 90%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 60%, transparent);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-soft);
 }
 .sheetMeta {
   display: flex;
@@ -269,7 +295,7 @@
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
   padding-bottom: 14px;
-  border-bottom: 1px solid var(--line-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--line-2) 75%, transparent);
   margin-bottom: 26px;
 }
 .sheetMeta b {
@@ -362,11 +388,16 @@
   display: flex;
   flex-direction: column;
   min-height: 0;
-  border-left: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-soft);
+  overflow: hidden;
 }
 .paneHead {
   padding: 11px 14px 10px;
-  border-bottom: 1px solid var(--line-2);
+  border-bottom: 1px solid color-mix(in srgb, var(--line-2) 75%, transparent);
   flex-shrink: 0;
 }
 .paneTitle {
@@ -392,8 +423,8 @@
 }
 .chip {
   height: 24px;
-  padding: 0 9px;
-  border-radius: 6px;
+  padding: 0 10px;
+  border-radius: 999px;
   font-size: 11.5px;
   color: var(--ink-2);
   display: inline-flex;
@@ -414,7 +445,7 @@
 }
 .chipOn {
   background: var(--sunk);
-  border-color: var(--line);
+  border-color: color-mix(in srgb, var(--line) 85%, transparent);
   color: var(--ink);
   font-weight: 500;
 }
@@ -434,23 +465,25 @@
   overflow-y: auto;
   flex: 1;
   min-height: 0;
-  padding: 6px;
+  padding: 8px;
 }
 .issue {
   display: block;
   width: 100%;
   text-align: left;
   position: relative;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
   margin-bottom: 2px;
-  transition: background 0.12s;
+  transition:
+    background 0.12s,
+    box-shadow 160ms var(--ease);
 }
 .issueMain {
   display: block;
   width: 100%;
   text-align: left;
   padding: 9px 10px 10px 12px;
-  border-radius: 7px;
+  border-radius: var(--r-sm);
 }
 .issueDismiss {
   position: absolute;
@@ -458,11 +491,12 @@
   right: 6px;
   font-size: 10px;
   line-height: 1;
-  padding: 3px 6px;
-  border-radius: 4px;
+  padding: 4px 9px;
+  border-radius: 999px;
   color: var(--ink-3);
-  background: var(--surface);
-  border: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
   opacity: 0;
   pointer-events: none;
   transition:
@@ -478,7 +512,8 @@
 }
 .issueDismiss:hover {
   color: var(--ink);
-  border-color: #d8d4c9;
+  border-color: color-mix(in srgb, var(--line) 90%, transparent);
+  box-shadow: var(--shadow-soft);
 }
 .issue:hover .iLine {
   opacity: 0;
@@ -488,6 +523,7 @@
 }
 .issue:hover {
   background: var(--sunk);
+  box-shadow: var(--shadow-soft);
 }
 .issue::before {
   content: '';
@@ -501,7 +537,9 @@
 }
 .issueOn {
   background: var(--mark-on);
-  box-shadow: inset 0 0 0 1px var(--mark-on-line);
+  box-shadow:
+    inset 0 0 0 1px var(--mark-on-line),
+    var(--shadow-soft);
 }
 .issueOn::before {
   background: var(--err);
@@ -519,7 +557,7 @@
   font-size: 10px;
   line-height: 1;
   padding: 3px 5px;
-  border-radius: 3px;
+  border-radius: 5px;
   letter-spacing: 0.02em;
   font-weight: 500;
 }
@@ -583,18 +621,22 @@
 
 /* ───────── 依据 ───────── */
 .source {
-  background: var(--sunk);
-  border-left: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(8px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-soft);
   overflow-y: auto;
   padding: 0 0 40px;
   min-height: 0;
 }
 .srcHead {
   padding: 13px 16px 12px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   position: sticky;
   top: 0;
-  background: var(--sunk);
+  background: color-mix(in srgb, var(--sunk) 88%, transparent);
+  backdrop-filter: blur(10px);
   z-index: 2;
 }
 .srcKey {
@@ -641,7 +683,7 @@
   content: '';
   flex: 1;
   height: 1px;
-  background: var(--line);
+  background: color-mix(in srgb, var(--line) 75%, transparent);
 }
 .quote {
   font-family: var(--serif);
@@ -650,8 +692,9 @@
   color: #2a2a25;
   padding: 10px 12px;
   background: var(--surface);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
   border-left: 2px solid #d8d3c6;
+  box-shadow: var(--shadow-soft);
   white-space: pre-wrap;
 }
 .cite {
@@ -673,7 +716,7 @@
   color: var(--ink-2);
   padding: 9px 11px;
   background: var(--brand-tint);
-  border-radius: 6px;
+  border-radius: var(--r-sm);
 }
 .note strong {
   font-weight: 600;
@@ -691,8 +734,9 @@
   align-items: center;
   gap: 14px;
   padding: 0 14px;
-  background: var(--surface);
-  border-top: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   font-size: 11px;
   color: var(--ink-3);
   font-variant-numeric: tabular-nums;
@@ -707,7 +751,7 @@
 .status .sep {
   width: 1px;
   height: 12px;
-  background: var(--line);
+  background: color-mix(in srgb, var(--line) 80%, transparent);
 }
 .dotOk {
   width: 5px;
@@ -720,16 +764,18 @@
 /* ───────── 中等宽度：依据变底部抽屉 ───────── */
 .sheetWrap {
   position: fixed;
-  left: 60px;
-  right: 0;
-  bottom: 33px;
+  left: 86px;
+  right: 14px;
+  bottom: 47px;
   z-index: 20;
   max-height: 46vh;
   display: flex;
   flex-direction: column;
-  background: var(--sunk);
-  border-top: 1px solid var(--line);
-  box-shadow: 0 -12px 32px -18px rgba(25, 25, 23, 0.35);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r-lg) var(--r-lg) 0 0;
+  box-shadow: 0 -18px 44px -22px color-mix(in srgb, var(--ink) 45%, transparent);
   transform: translateY(100%);
   transition: transform 0.32s var(--ease);
 }
@@ -741,7 +787,7 @@
   align-items: center;
   gap: 8px;
   padding: 8px 14px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
   font-size: 11px;
   color: var(--ink-3);
   letter-spacing: 0.06em;
@@ -767,8 +813,11 @@
   display: flex;
   gap: 2px;
   padding: 0 10px;
-  background: var(--surface);
-  border-top: 1px solid var(--line);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border-top: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r) var(--r) 0 0;
+  box-shadow: 0 -8px 24px -18px color-mix(in srgb, var(--ink) 40%, transparent);
   position: fixed;
   left: 0;
   right: 0;
@@ -806,8 +855,13 @@
     grid-template-rows: 52px minmax(0, 1fr) 33px;
     padding-bottom: 46px;
   }
+  .workspace {
+    gap: 8px;
+    padding: 8px;
+  }
   .sheet {
     padding: 24px 22px 70px;
+    margin: 12px 10px;
   }
   .ln {
     display: none;
@@ -841,18 +895,16 @@
   padding: 7px 14px;
   font-size: 12px;
   color: var(--ink-2);
-  background: var(--surface);
+  background: var(--glass);
+  backdrop-filter: blur(12px);
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
   border-radius: 999px;
-  box-shadow:
-    0 0 0 1px var(--line),
-    0 10px 24px -16px rgba(25, 25, 23, 0.4);
+  box-shadow: var(--shadow-lift);
 }
 
 .noticeErr {
   color: #a3312d;
-  box-shadow:
-    0 0 0 1px #e3b8b5,
-    0 10px 24px -16px rgba(25, 25, 23, 0.4);
+  border-color: #e3b8b5;
 }
 
 .notice button {

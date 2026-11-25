@@ -8,14 +8,17 @@
   place-items: center;
   padding: 24px;
   background: rgba(25, 25, 23, 0.34);
+  backdrop-filter: blur(3px);
   animation: fadeIn 0.16s var(--ease);
 }
 
 .panel {
   width: min(680px, 100%);
-  background: var(--surface);
-  border-radius: 14px;
-  box-shadow: 0 24px 70px -30px rgba(25, 25, 23, 0.55);
+  background: var(--glass);
+  backdrop-filter: blur(20px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r-lg);
+  box-shadow: var(--shadow-lift);
   overflow: hidden;
   animation: panelIn 0.2s var(--ease);
 }
@@ -61,8 +64,8 @@
 .close {
   font-size: 14px;
   color: var(--ink-3);
-  padding: 2px 8px;
-  border-radius: 6px;
+  padding: 2px 9px;
+  border-radius: 999px;
 }
 
 .close:hover {
@@ -80,9 +83,9 @@
   font-size: 14px;
   line-height: 1.85;
   color: var(--ink);
-  background: var(--paper);
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  background: color-mix(in srgb, var(--paper) 85%, transparent);
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: var(--r-sm);
   resize: vertical;
 }
 
@@ -108,12 +111,20 @@
 .primary {
   font-size: 12.5px;
   padding: 8px 15px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
+  transition:
+    transform 160ms var(--ease),
+    box-shadow 160ms var(--ease);
 }
 
 .ghost {
   color: var(--ink-2);
-  box-shadow: 0 0 0 1px var(--line);
+  box-shadow: 0 0 0 1px color-mix(in srgb, var(--line) 85%, transparent);
+}
+.ghost:hover,
+.primary:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lift);
 }
 
 .primary {

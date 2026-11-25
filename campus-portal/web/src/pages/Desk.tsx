@@ -5,6 +5,7 @@ import { useReview } from '../hooks/useReview';
 import { useReviewRequest } from '../hooks/useReviewRequest';
 import { useMediaQuery } from '../hooks/useMediaQuery';
 import { AppBar, MobileTabs, Rail, StatusBar } from '../components/Shell';
+import { SoftBackdrop } from '../components/SoftBackdrop';
 import { CorpusSearch } from '../components/CorpusSearch';
 import { SubmitDialog } from '../components/SubmitDialog';
 import { DocumentPane } from '../components/DocumentPane';
@@ -16,7 +17,7 @@ import type { Issue } from '../types';
 const NO_ISSUES: readonly Issue[] = [];
 const RULE_MAP = new Map(RULES.map((r) => [r.id, r]));
 
-/** B 类工作台页面：无渐变、无光斑，动效只有一次 420ms 分层落位 */
+/** 校稿台三栏工作台：沿用首页的柔和氛围层与圆角语汇，布局仍是满屏 grid */
 export default function Desk() {
   const { phase, sourceKind, displayName, draft, report, reportName, submit, submitFile, retry } =
     useReviewRequest();
@@ -106,7 +107,11 @@ export default function Desk() {
   const rule = selected ? (RULE_MAP.get(selected.ruleId) ?? null) : null;
   const focusLine = selected?.line ?? null;
 
-  const wsClass = compact ? s.workspaceCompact : wide ? s.workspace : s.workspaceNoEvidence;
+  // 基类始终带上：display:grid / gap / padding / min-height 都写在 .workspace，
+  // 两个断点类只覆盖列数。早先三元选一会让中等宽度与窄屏丢掉 grid。
+  const wsClass = `${s.workspace} ${
+    compact ? s.workspaceCompact : wide ? '' : s.workspaceNoEvidence
+  }`;
 
   const docPane = (
     <DocumentPane
@@ -140,6 +145,7 @@ export default function Desk() {
 
   return (
     <div className={`${s.app} ${compact ? s.appCompact : ''}`}>
+      <SoftBackdrop />
       <input
         ref={fileRef}
         type="file"

@@ -2,17 +2,18 @@
 
 .wrap {
   position: fixed;
-  top: 52px;
-  left: 64px;
-  bottom: 32px;
+  top: 64px;
+  left: 86px;
+  bottom: 47px;
   width: min(400px, 42vw);
   z-index: 40;
   display: flex;
   flex-direction: column;
-  background: var(--surface);
-  box-shadow:
-    1px 0 0 var(--line),
-    12px 0 32px -20px rgba(25, 25, 23, 0.35);
+  background: var(--glass);
+  backdrop-filter: blur(16px);
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r);
+  box-shadow: var(--shadow-lift);
   animation: slideIn 0.24s var(--ease);
 }
 
@@ -32,7 +33,7 @@
   align-items: baseline;
   gap: 10px;
   padding: 13px 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
 .head b {
@@ -49,8 +50,8 @@
   margin-left: auto;
   font-size: 13px;
   color: var(--ink-3);
-  padding: 3px 8px;
-  border-radius: 6px;
+  padding: 3px 9px;
+  border-radius: 999px;
 }
 
 .close:hover {
@@ -62,15 +63,15 @@
   display: flex;
   gap: 8px;
   padding: 12px 16px;
-  border-bottom: 1px solid var(--line);
+  border-bottom: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
 }
 
 .input {
   flex: 1;
   font-size: 13px;
   padding: 8px 11px;
-  border: 1px solid var(--line);
-  border-radius: 8px;
+  border: 1px solid color-mix(in srgb, var(--line) 80%, transparent);
+  border-radius: var(--r-sm);
   background: var(--paper);
   color: var(--ink);
 }
@@ -83,9 +84,16 @@
 .go {
   font-size: 12.5px;
   padding: 8px 14px;
-  border-radius: 8px;
+  border-radius: var(--r-sm);
   background: var(--ink);
   color: var(--surface);
+  transition:
+    transform 160ms var(--ease),
+    box-shadow 160ms var(--ease);
+}
+.go:hover:not(:disabled) {
+  transform: translateY(-1px);
+  box-shadow: var(--shadow-lift);
 }
 
 .go:disabled {
@@ -124,10 +132,11 @@
 }
 
 .item {
-  border: 1px solid var(--line);
-  border-radius: 10px;
+  border: 1px solid color-mix(in srgb, var(--line) 75%, transparent);
+  border-radius: var(--r);
   padding: 9px 12px;
-  background: var(--paper);
+  background: color-mix(in srgb, var(--surface) 88%, transparent);
+  box-shadow: var(--shadow-soft);
 }
 
 .itemHead {
@@ -167,5 +176,15 @@
 @media (prefers-reduced-motion: reduce) {
   .wrap {
     animation: none;
+  }
+}
+
+/* 校稿台窄屏：rail 收成 52px、底部有标签栏，固定定位值跟着断点走 */
+@media (max-width: 900px) {
+  .wrap {
+    top: 60px;
+    left: 68px;
+    bottom: 54px;
+    width: min(400px, calc(100vw - 76px));
   }
 }
