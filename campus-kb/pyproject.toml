@@ -23,6 +23,9 @@ dev = [
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 pythonpath = ["."]
+# 系统临时目录在沙箱/CI 里可能不可建（pytest-of-root 触发 FileExistsError），
+# basetemp 固定到项目内相对目录，pytest 每次自行清理，且已在 .gitignore 排除。
+addopts = "--basetemp=.pytest_tmp"
 
 [tool.pyright]
 include = ["api", "checker.py"]

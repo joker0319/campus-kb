@@ -5,6 +5,7 @@ __pycache__/
 *.pyc
 .venv/
 .pytest_cache/
+.pytest_tmp/
 
 # 本地密钥（复制 campus-kb/.env.example 后填写，绝不入库）
 .env
