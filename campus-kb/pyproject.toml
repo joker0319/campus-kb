@@ -27,10 +27,10 @@ pythonpath = ["."]
 # 系统临时目录在沙箱/CI 里可能不可建（pytest-of-root 触发 FileExistsError），
 # basetemp 固定到项目内相对目录，pytest 每次自行清理，且已在 .gitignore 排除。
 # xdist 下每个 worker 会自动分到 .pytest_tmp/popen-gw<N>/，tmp_path 天然隔离。
-addopts = "--basetemp=.pytest_tmp"
-# 并行需显式开：pytest -n 4。196 个用例全为毫秒级（最慢 0.12s），
-# 实测串行 1.1s、-n 4 为 1.8s、-n auto 为 3.5s——worker 启动开销大于收益，
-# 故不写进 addopts；待出现百毫秒级以上的慢用例再默认开启。
+# 默认并行 4 worker；单例调试或接入 pdb 时用 `pytest -n 0` 退回串行。
+# 注：当前 196 个用例全为毫秒级（最慢 0.12s），串行 1.1s 反而快于并行 1.8s，
+# 默认并行是为后续慢用例（真实嵌入/模型调用）预留；嫌慢可显式 -n 0。
+addopts = "--basetemp=.pytest_tmp -n 4"
 
 [tool.pyright]
 include = ["api", "checker.py"]
