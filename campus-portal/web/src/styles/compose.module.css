@@ -55,13 +55,20 @@
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
-  padding: clamp(20px, 3vw, 34px) clamp(18px, 2.2vw, 30px) 56px;
+  /* 初始态用 flex + margin:auto 把内容垂直居中，空白均分到上下；
+     内容超出视口时 auto margin 退化为 0，仍能从顶部正常滚动 */
+  display: flex;
+  flex-direction: column;
+  padding: clamp(20px, 3vw, 34px) clamp(18px, 2.2vw, 30px);
   background: var(--glass);
   backdrop-filter: blur(8px);
 }
 .workSplit .left {
   flex: 0 0 clamp(340px, 32vw, 452px);
   border-right: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  /* 展开态左栏变窄且内容可能很长，回到普通块流、靠顶排布 */
+  display: block;
+  padding-bottom: 56px;
 }
 
 .stage {
@@ -101,9 +108,10 @@
 .panel {
   display: flex;
   flex-direction: column;
-  /* 收起态内容居中，避免整屏被拉成一条细长的输入区 */
+  width: 100%;
+  /* 收起态水平+垂直都居中，避免整屏被拉成一条细长的输入区 */
   max-width: 660px;
-  margin: 0 auto;
+  margin: auto;
 }
 .workSplit .panel {
   max-width: none;
@@ -855,5 +863,67 @@ details[open] .dSummary::before {
   .stageBar {
     position: sticky;
     top: 0;
+  }
+}
+
+/* 初始态的成稿链路说明：填住左栏下方空白，同时把项目定位讲清楚 */
+.flow {
+  border: 1px solid color-mix(in srgb, var(--line) 70%, transparent);
+  border-radius: var(--r-lg);
+  background: color-mix(in srgb, var(--surface) 72%, transparent);
+  box-shadow: var(--shadow-soft);
+  padding: 20px 22px 22px;
+}
+.flowHead {
+  display: flex;
+  align-items: baseline;
+  gap: 12px;
+  margin-bottom: 16px;
+}
+.flowKicker {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.12em;
+  color: var(--brand);
+}
+.flowTitle {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.flowSteps {
+  list-style: none;
+  display: grid;
+  grid-template-columns: repeat(3, minmax(0, 1fr));
+  gap: 16px;
+}
+.flowStep {
+  display: flex;
+  flex-direction: column;
+  gap: 5px;
+  padding-left: 13px;
+  border-left: 2px solid color-mix(in srgb, var(--brand) 32%, transparent);
+}
+.flowNum {
+  font-family: var(--mono);
+  font-size: 10px;
+  letter-spacing: 0.08em;
+  color: var(--brand);
+}
+.flowName {
+  font-size: 13px;
+  font-weight: 600;
+  color: var(--ink);
+}
+.flowDesc {
+  font-size: 11.5px;
+  line-height: 1.7;
+  color: var(--ink-3);
+}
+
+@media (max-width: 640px) {
+  .flowSteps {
+    grid-template-columns: 1fr;
+    gap: 10px;
   }
 }

@@ -183,6 +183,20 @@ describe('写文章页', () => {
     ).toBeTruthy();
   });
 
+  it('初始态用成稿链路填住左栏下方，展开右栏后自动收起', async () => {
+    const user = userEvent.setup();
+    render(<Compose />);
+    expect(screen.getByRole('region', { name: '成稿链路' })).toBeTruthy();
+    expect(screen.getByText('从一句话到可直发')).toBeTruthy();
+
+    await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
+    await user.click(screen.getByRole('button', { name: '生成文章' }));
+    await waitFor(() => {
+      expect(screen.getByRole('region', { name: '文章预览' })).toBeTruthy();
+    });
+    expect(screen.queryByRole('region', { name: '成稿链路' })).toBeNull();
+  });
+
   it('选题过短时生成按钮禁用', () => {
     render(<Compose />);
     const button = screen.getByRole<HTMLButtonElement>('button', { name: '生成文章' });

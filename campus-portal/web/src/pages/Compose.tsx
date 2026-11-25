@@ -418,6 +418,39 @@ export default function Compose() {
                 ))}
               </div>
             </div>
+
+            {/* 初始态用链路说明填满左栏下方，展开后左栏变窄即收起 */}
+            {!stageVisible && (
+              <section className={s.flow} aria-label="成稿链路">
+                <div className={s.flowHead}>
+                  <span className={s.flowKicker}>HOW IT WORKS</span>
+                  <span className={s.flowTitle}>从一句话到可直发</span>
+                </div>
+                <ol className={s.flowSteps}>
+                  <li className={s.flowStep}>
+                    <span className={s.flowNum}>01</span>
+                    <span className={s.flowName}>检索语料</span>
+                    <span className={s.flowDesc}>
+                      67 篇往期推文与规范档案混合召回，成稿段落都能回溯出处
+                    </span>
+                  </li>
+                  <li className={s.flowStep}>
+                    <span className={s.flowNum}>02</span>
+                    <span className={s.flowName}>Agent 成稿</span>
+                    <span className={s.flowDesc}>
+                      自动判定文体，边写边显示；继续改只在原稿上改，不重编素材
+                    </span>
+                  </li>
+                  <li className={s.flowStep}>
+                    <span className={s.flowNum}>03</span>
+                    <span className={s.flowName}>复制直发</span>
+                    <span className={s.flowDesc}>
+                      内联样式排版、配图占位与发前检查一起给出，直接进公众号编辑器
+                    </span>
+                  </li>
+                </ol>
+              </section>
+            )}
           </div>
         </aside>
 
