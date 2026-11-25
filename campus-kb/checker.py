@@ -170,10 +170,23 @@ def h_must_near(rule, text):
     return out
 
 
+def exclude_spans(pattern, text):
+    """专有名词豁免区间：落在 exclude 命中区间内的术语不再判定。
+
+    用于「港澳台侨联招」这类全称里含禁用写法、但改了就错的专名。
+    """
+    if not pattern:
+        return []
+    return [(m.start(), m.end()) for m in re.finditer(pattern, text)]
+
+
 def h_require_context(rule, text):
     out = []
     for item in rule["params"]["terms"]:
+        skip = exclude_spans(item.get("exclude"), text)
         for m in re.finditer(re.escape(item["term"]), text):
+            if any(s <= m.start() and m.end() <= e for s, e in skip):
+                continue
             scope = item.get("scope") or rule["params"].get("scope", "window")
             if scope == "document":
                 ctx = text
