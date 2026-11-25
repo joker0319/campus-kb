@@ -151,16 +151,14 @@ describe('写文章页', () => {
     expect(screen.getByRole('button', { name: '生成文章' })).toBeTruthy();
   });
 
-  it('左右分栏：左侧固定选题，右侧初始是待生成空态', () => {
+  it('初始右栏完全收起，只有左侧选题区', () => {
     render(<Compose />);
     const left = screen.getByRole('complementary', { name: '选题与设置' });
-    const right = screen.getByRole('region', { name: '文章预览' });
     expect(within(left).getByLabelText('文章选题输入框')).toBeTruthy();
-    expect(within(right).getByText('文章会出现在这里')).toBeTruthy();
-    expect(within(right).queryByText('港城莞科研新进展')).toBeNull();
+    expect(screen.queryByRole('region', { name: '文章预览' })).toBeNull();
   });
 
-  it('提交选题后自动唤起右栏显示草稿，左栏保持可见', async () => {
+  it('提交选题后展开右栏，草稿栏固定在最上方、文章单独滚动', async () => {
     const user = userEvent.setup();
     render(<Compose />);
     await user.type(screen.getByLabelText('文章选题输入框'), '写一篇科研进展推文');
@@ -170,7 +168,14 @@ describe('写文章页', () => {
     await waitFor(() => {
       expect(within(right).getByText('港城莞科研新进展')).toBeTruthy();
     });
-    expect(within(right).queryByText('文章会出现在这里')).toBeNull();
+
+    // 草稿栏是右栏的直接首元素，不在滚动容器内，才能一直固定在最上方
+    const bar = within(right).getByText('草稿预览').closest('div');
+    expect(bar?.parentElement).toBe(right);
+    expect(right.firstElementChild).toBe(bar);
+    const scroll = bar?.nextElementSibling as HTMLElement;
+    expect(within(scroll).getByText('港城莞科研新进展')).toBeTruthy();
+
     expect(
       within(screen.getByRole('complementary', { name: '选题与设置' })).getByLabelText(
         '文章选题输入框',

@@ -35,7 +35,7 @@
   color: var(--ink-4);
 }
 
-/* 左右两栏：左边选题固定不动，右边文章独立上下滚动 */
+/* 未提交时右栏完全收起，左栏独占；提交后才切成左右双栏 */
 .work {
   flex: 1;
   min-height: 0;
@@ -44,51 +44,61 @@
 }
 
 .left {
-  flex: 0 0 clamp(340px, 32vw, 452px);
+  flex: 1 1 auto;
   min-width: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: clamp(20px, 3vw, 34px) clamp(18px, 2.2vw, 30px) 56px;
-  border-right: 1px solid var(--line);
   background: var(--surface);
+}
+.workSplit .left {
+  flex: 0 0 clamp(340px, 32vw, 452px);
+  border-right: 1px solid var(--line);
 }
 
 .stage {
   flex: 1;
   min-width: 0;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  overflow: hidden;
+  background: var(--paper);
+}
+/* 顶部草稿栏固定在右栏最上方，不参与文章滚动 */
+.stageBar {
+  flex: none;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 12px 18px;
+  border-bottom: 1px solid var(--line);
+  background: var(--sunk);
+  flex-wrap: wrap;
+  z-index: 3;
+}
+.stageScroll {
+  flex: 1;
+  min-height: 0;
   overflow-y: auto;
   overscroll-behavior: contain;
   padding: clamp(18px, 2.4vw, 30px) clamp(18px, 3vw, 40px) 72px;
-  background: var(--paper);
 }
 .stageInner {
   max-width: 780px;
   margin: 0 auto;
 }
 
-/* 右侧空态：还没生成时占据文章区，不让版式先跳一下 */
-.stageEmpty {
-  border: 1px dashed var(--line);
-  background: var(--surface);
-  padding: clamp(32px, 8vh, 72px) 24px;
-  text-align: center;
-}
-.stageEmptyTitle {
-  font-family: var(--serif);
-  font-size: 17px;
-  color: var(--ink-2);
-  margin: 0 0 10px;
-}
-.stageEmptyHint {
-  font-size: 13px;
-  line-height: 1.85;
-  color: var(--ink-3);
-  margin: 0;
-}
-
 .panel {
   display: flex;
   flex-direction: column;
+  /* 收起态内容居中，避免整屏被拉成一条细长的输入区 */
+  max-width: 660px;
+  margin: 0 auto;
+}
+.workSplit .panel {
+  max-width: none;
+  margin: 0;
 }
 
 .head {
@@ -215,19 +225,6 @@
 .result {
   background: var(--surface);
   border: 1px solid var(--line);
-}
-.resultBar {
-  display: flex;
-  align-items: center;
-  gap: 10px;
-  padding: 12px 18px;
-  border-bottom: 1px solid var(--line);
-  background: var(--sunk);
-  flex-wrap: wrap;
-  /* 右栏独立滚动时，操作条常驻顶部，滚到文末也能直接复制 */
-  position: sticky;
-  top: 0;
-  z-index: 3;
 }
 .resultTitle {
   font-size: 13px;
@@ -426,15 +423,14 @@ details[open] .dSummary::before {
 }
 
 @media (prefers-reduced-motion: no-preference) {
-  /* 提交后右栏「唤起」：内容从右侧滑入，落定即可阅读 */
-  .result,
-  .stageEmpty {
-    animation: slideIn 260ms var(--ease) both;
+  /* 提交后右栏从收起态展开：整栏从右侧滑入 */
+  .stage {
+    animation: slideIn 280ms var(--ease) both;
   }
   @keyframes slideIn {
     from {
       opacity: 0;
-      transform: translateX(18px);
+      transform: translateX(28px);
     }
     to {
       opacity: 1;
@@ -809,10 +805,11 @@ details[open] .dSummary::before {
     overflow-y: auto;
   }
   .left,
+  .workSplit .left,
   .stage {
     flex: none;
     width: 100%;
-    overflow-y: visible;
+    overflow: visible;
     overscroll-behavior: auto;
   }
   .left {
@@ -820,11 +817,15 @@ details[open] .dSummary::before {
     border-bottom: 1px solid var(--line);
     padding-bottom: 40px;
   }
-  .stage {
+  .stageScroll {
+    flex: none;
+    overflow: visible;
+    overscroll-behavior: auto;
     padding-top: 24px;
   }
-  /* 页面成为唯一滚动容器后，吸顶会互相打架，退回普通布局 */
-  .resultBar {
-    position: static;
+  /* 页面成为唯一滚动轴后，草稿栏仍吸在顶部 */
+  .stageBar {
+    position: sticky;
+    top: 0;
   }
 }

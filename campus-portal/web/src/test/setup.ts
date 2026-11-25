@@ -20,3 +20,5 @@ Object.defineProperty(window, 'matchMedia', {
 });
 
 Element.prototype.scrollIntoView = vi.fn();
+// App 路由切换会调 window.scrollTo(0, 0)，jsdom 未实现会刷一屏告警
+Object.defineProperty(window, 'scrollTo', { writable: true, value: vi.fn() });
