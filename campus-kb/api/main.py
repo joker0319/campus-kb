@@ -8,6 +8,7 @@
 """
 
 import json
+import os
 import sys
 from collections import Counter
 from pathlib import Path
@@ -52,11 +53,18 @@ app = FastAPI(
     version="0.2.0",
 )
 
+# 默认放行：本地 dev（5173）与线上同源部署都要能调；allow_credentials=False。
+# Docker 部署时后端不对外暴露端口，公网只能经 nginx（已加 Basic Auth 与限流）。
+# 若需要收紧，设置 CAMPUS_ALLOW_ORIGINS="https://your-domain.com,http://127.0.0.1:5173"。
+_allowed_origins = [
+    origin.strip()
+    for origin in os.environ.get("CAMPUS_ALLOW_ORIGINS", "*").split(",")
+    if origin.strip()
+] or ["*"]
+
 app.add_middleware(
     CORSMiddleware,
-    # allow_credentials=False 时可安全放行任意来源；这是无鉴权的内部校验工具，
-    # 前端本地 dev 与 Vercel 静态站都要能调，故不枚举域名。
-    allow_origins=["*"],
+    allow_origins=_allowed_origins,
     allow_methods=["GET", "POST"],
     allow_headers=["*"],
 )

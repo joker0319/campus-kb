@@ -33,12 +33,12 @@
 | 文章生成 `#/compose` | ✅ 可用 | 选文体（自动判断 / 新闻动态 / 喜讯捷报 / 致辞讲稿，各带结构骨架与语气要求）→ 输入选题 → 检索知识库 → DeepSeek 成结构化草稿（标题/导语/分节正文/配图建议）→ 后端校验每段出处 + 发前规范检查；成稿后可**继续下指令改稿**（沿用原素材编号、保留多版本可回看），草稿存本地刷新不丢；无依据段落明确标注，不臆测。成稿同时给一份**内联样式 HTML**，点「复制排版」粘进公众号编辑器就是排好的版式。**成稿过程是流式的**：SSE 边写边显示，标题、导语、段落依次出现，不用干等十几秒。`POST /api/compose` + `POST /api/compose/stream` + `POST /api/compose/revise`，真实密钥端到端验证通过 |
 | 配图推荐 `api/figures.py` | ✅ 可用 | 把往期推文抓下的 2331 张原图筛成 **672 张真配图**（滤掉分隔线/图标/占位块/动图，按字节去重），逐张标注描述与性质，其中 **397 张可推荐**；id 用**内容哈希**（`f` + sha1 前 10 位），重建不清空标注；成稿按「图注 + 来源文章」给每节推可用真图，实景优先、肖像不推、分数不够宁可空着；界面**只显示占位块 + 图注 + 尺寸 + 来源**，不加载真实照片，需要那张图时点「取原图」；导出的 Markdown 写〔配图占位：图注〕，编辑按此替换实拍图 |
 | 公众号排版导出 `api/export_html.py` | ✅ 可用 | 结构化草稿 → 一段可直接粘进公众号编辑器的 HTML：**全部内联 `style`**（编辑器会把 `<style>` 与 class 剥掉）、标题居中、导语灰字、小标题带左侧竖线、正文 16px/1.9 两端对齐；不输出 `[A#]` 内部编号，跳过「素材不足」段，配图统一给虚线占位框（图注 + 尺寸 + 「请替换为对应现场照片」） |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/stream`（流式成稿 SSE）、`/api/compose/revise`（改稿）、`/api/figure/{id}`（往期配图下发）、`/api/figures/stats`（图库状态），181 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/stream`（流式成稿 SSE）、`/api/compose/revise`（改稿）、`/api/figure/{id}`（往期配图下发）、`/api/figures/stats`（图库状态）、`/api/agent/stream`（助手 SSE），203 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 公众号语料入库 | ✅ 可用 | `campus-kb/tools/fetch_wechat.py` 抓自有公众号推文转 `corpus/text/*_WX.txt`，`_WX` 标记来源；文字型直接提取，长图型用 macOS Vision OCR（`tools/ocr.swift`，切片拼接识别）。入库即可被 `/api/search` 与 Agent 检索，无需重启 |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
 | Agent 助手 `#/assistant` | ✅ 可用 | 单输入框的 Agent 对话：DeepSeek Function Calling 自选工具（查规范 / 查档案 / 校稿件），工具在后端确定性执行并回灌，前端展示回答 + 执行轨迹 + 依据。校验结论仍由规则引擎产出。已用真实密钥端到端验证 |
-| 前端部署（Vercel） | ✅ 静态站 | Vercel 导入 `campus-portal/web`，Root Directory 设为 `campus-portal/web`（见该目录 `vercel.json`）；仅前端，线上无 `/api` 后端 |
+| Docker 部署 | ✅ 全栈 | 根目录 `docker-compose.yml` + `deploy/`：nginx 托管前端并反代 `/api`（含 SSE），FastAPI 独立容器；带 Basic Auth、限流与数据卷说明，见 4.3 节。Vercel 仅能托管静态前端、线上无 `/api`，不作为正式部署方式 |
 | 数据库 / 投稿流程 | ⏳ 未开始 | 选型见 [ADR-001](campus-portal/docs/tech-selection.md) |
 | docx 解析 / 导出报告 | ✅ 可用 | 上传 `.docx` 提取段落与表格文本，按同一套规则校验并给出处；导出 Markdown 报告。不在原文件写真批注 |
 
@@ -81,7 +81,7 @@ cd campus-kb
 python3 checker.py samples/bad-draft.md                 # 终端输出（退出码：有 error 返回 1）
 python3 checker.py samples/bad-draft.md --json          # 供其他系统调用
 uv sync                                                 # 安装 API 依赖
-uv run pytest                                           # 27 个用例，含基线断言
+uv run pytest                                           # 203 个用例，默认 -n 4 并行；-n 0 串行
 uv run uvicorn api.main:app --reload --port 8000        # 启动 API
 ```
 
@@ -96,11 +96,51 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 
 路由为 hash 形式，无需服务端配置：`#/` 首页、`#/compose` 写文章、`#/desk` 校稿台、`#/assistant` 内容助手。
 
+### 4.3 Docker 部署（完整服务，含后端）
+
+Vercel 只能托管静态前端、线上没有 `/api`，**正式使用走 Docker Compose**：一个容器跑 nginx 托管前端并反代 `/api`，一个容器跑 FastAPI；后端端口不对外暴露，公网唯一入口是 nginx。
+
+```bash
+# 1. 配置环境变量（复制后填真实密钥与访问口令）
+cp .env.example .env
+
+# 2. 确认语料已在部署机上（这部分不在 git 里）
+#    必需：campus-kb/corpus/text/、campus-kb/corpus/.index/、
+#          campus-kb/corpus/images/{INDEX.json,captions.json}
+
+# 3. 构建并启动
+docker compose up -d --build
+
+# 4. 访问 http://<服务器IP>:${CAMPUS_HTTP_PORT:-8080}，用 .env 里的账号密码登录
+curl -u "$CAMPUS_BASIC_USER:$CAMPUS_BASIC_PASSWORD" http://127.0.0.1:8080/api/health
+```
+
+常用操作：`docker compose logs -f web`（访问日志/SSE 排障）、`docker compose restart api`、`docker compose down`。改语料或规则后重建镜像：`docker compose up -d --build`。
+
+| 配置项 | 必填 | 说明 |
+| --- | --- | --- |
+| `DEEPSEEK_API_KEY` | 是 | 成稿与 Agent 的密钥；未填时 health 仍为 ok，但生成类接口返回 503 |
+| `CAMPUS_BASIC_USER` / `CAMPUS_BASIC_PASSWORD` | 是 | 整站 Basic Auth；不填则 web 容器拒绝启动，避免裸奔 |
+| `CAMPUS_HTTP_PORT` | 否 | 对外端口，默认 8080 |
+| `CAMPUS_EMBEDDING` | 否 | `auto`（默认，首次下载约 95MB 模型）/ `off`（纯 BM25） |
+| `CAMPUS_ALLOW_ORIGINS` | 否 | 逗号分隔的 CORS 白名单；同源部署留空即可 |
+
+数据卷与镜像的边界：
+
+| 路径 | 挂载方式 | 原因 |
+| --- | --- | --- |
+| `campus-kb/corpus/text` | 只读 | 93 份文本语料，检索输入 |
+| `campus-kb/corpus/.index` | 可写 | 向量索引是语料派生物，更新语料后需在容器内重建 |
+| `campus-kb/corpus/images/INDEX.json`、`captions.json` | 只读 | 只挂图注/来源元数据；691MB 原图不进容器，界面按既定方案显示占位 |
+| `rules/`、`authority.json`、`checker.py` | 进镜像 | 规则与权威口径随代码版本走 |
+
+安全边界：`api` 容器只有 `expose: 8000`（无 `ports`），公网无法直连；nginx 层整站 Basic Auth + 按 IP 限流（普通接口 30r/m，成稿/Agent 6r/m）；CORS 可通过环境变量收紧。**Basic Auth 只解决"不裸奔"，公网长期运行仍建议在前面套 TLS 反代或负载均衡。**
+
 ## 5. 前端做了什么
 
 **首页 `#/`**
 
-- 回归首页本分：顶部导航（首页 / 内容助手 / 校稿台）+ 主体 + 页脚，去掉了统计条、能力卡片、流程条；保留 hero 右栏的 3D 稿件卡轮播（NAME-001 / SOEV-002 / RANK-001 三个真实命中，5.6s 切换、悬停暂停、reduced-motion 降级）；
+- 回归首页本分：顶部导航（首页 / 内容助手 / 写文章 / 校稿台）+ 主体 + 页脚，去掉了统计条、能力卡片、流程条；hero 右栏轮播按项目定位改为「知识库 → Agent 成稿 → 复制直发」三步（STAGE-01/02/03，5.6s 切换、悬停暂停、reduced-motion 降级）；
 - 墨点是「内容助手」的入口：SVG 精灵保留呼吸 / 眨眼 / 瞳孔跟随，点击进 `#/assistant`；
 - 首页文案讲项目定位——「写出能发的公众号文章」，不堆校验数字；校稿台是导航里的一项功能。
 
@@ -233,7 +273,7 @@ npm run check      # 类型 + ESLint + Prettier + 测试，提交前跑这个
 - 只做**文本规则**：不判断事实真伪，不校验图片（仍需人工）；
 - 中文分词靠正则，长句中的职务简称（如「段校长」）可能漏判，靠人名 + 窗口匹配兜底；
 - docx 支持正文提取与报告导出，但不在原 `.docx` 上写真批注（只输出 Markdown 报告）；扫描件 PDF 仍需人工/OCR；
-- Agent / AI 问答依赖本地 `campus-kb/.env` 中的 `DEEPSEEK_API_KEY`（已 gitignore）；模型只做意图判断与语言组织，回答不替代规则引擎的确定性校验，且受检索质量限制；
+- Agent / AI 问答依赖 `DEEPSEEK_API_KEY`（本地 `campus-kb/.env`、Docker 部署时为根目录 `.env` 注入的环境变量，均已 gitignore）；模型只做意图判断与语言组织，回答不替代规则引擎的确定性校验，且受检索质量限制；
 - 语义检索依赖本地 ONNX 模型（约 95MB，首次自动下载到本机缓存）；下载失败或设 `CAMPUS_EMBEDDING=off` 时自动降级纯 BM25，接口不会挂。向量索引是语料的派生物、未入库，可随时重建；尚未接入 reranker 重排序；
 - 公众号抓取只处理**自有账号**；长图型推文靠 Vision OCR 提取，存在少量形近字与切片接缝处的缺字，适合做检索语料，不适合直接引用出版；
 - `layout.json` 只是排版参数，尚未接入文档生成。

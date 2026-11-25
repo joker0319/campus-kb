@@ -228,7 +228,7 @@ export default function Assistant() {
                 ) : t.error ? (
                   <div className={s.botMsg}>
                     <p className={s.ansSummary}>查询失败：{t.error}</p>
-                    <p className={s.ansEmpty}>请确认本地后端已启动（127.0.0.1:8000）。</p>
+                    <p className={s.ansEmpty}>请确认后端服务正常，或稍后重试。</p>
                   </div>
                 ) : t.result ? (
                   <div className={s.botMsg}>
