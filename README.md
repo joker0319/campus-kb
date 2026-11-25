@@ -38,7 +38,7 @@
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
 | Agent 助手 `#/assistant` | ✅ 可用 | 单输入框的 Agent 对话：DeepSeek Function Calling 自选工具（查规范 / 查档案 / 校稿件），工具在后端确定性执行并回灌，前端展示回答 + 执行轨迹 + 依据。校验结论仍由规则引擎产出。已用真实密钥端到端验证 |
-| Docker 部署 | ✅ 全栈 | 根目录 `docker-compose.yml` + `deploy/`：nginx 托管前端并反代 `/api`（含 SSE），FastAPI 独立容器；带 Basic Auth、限流与数据卷说明，见 4.3 节。Vercel 仅能托管静态前端、线上无 `/api`，不作为正式部署方式 |
+| Docker 部署 | ✅ 全栈 | 根目录 `docker-compose.yml` + `deploy/`：nginx 托管前端并反代 `/api`（含 SSE），FastAPI 独立容器；带 Basic Auth、限流与数据卷说明，见 4.3 节。4.4 节给出域名 + Let's Encrypt 自动续期的 HTTPS 方案。Vercel 仅能托管静态前端、线上无 `/api`，不作为正式部署方式 |
 | 数据库 / 投稿流程 | ⏳ 未开始 | 选型见 [ADR-001](campus-portal/docs/tech-selection.md) |
 | docx 解析 / 导出报告 | ✅ 可用 | 上传 `.docx` 提取段落与表格文本，按同一套规则校验并给出处；导出 Markdown 报告。不在原文件写真批注 |
 
@@ -153,7 +153,48 @@ curl -u "$CAMPUS_BASIC_USER:$CAMPUS_BASIC_PASSWORD" http://127.0.0.1:8080/api/he
 | `campus-kb/corpus/images/INDEX.json`、`captions.json` | 只读 | 只挂图注/来源元数据；691MB 原图不进容器，界面按既定方案显示占位 |
 | `rules/`、`authority.json`、`checker.py` | 进镜像 | 规则与权威口径随代码版本走 |
 
-安全边界：`api` 容器只有 `expose: 8000`（无 `ports`），公网无法直连；nginx 层整站 Basic Auth + 按 IP 限流（普通接口 30r/m，成稿/Agent 6r/m）；CORS 可通过环境变量收紧。**Basic Auth 只解决"不裸奔"，公网长期运行仍建议在前面套 TLS 反代或负载均衡。**
+安全边界：`api` 容器只有 `expose: 8000`（无 `ports`），公网无法直连；nginx 层整站 Basic Auth + 按 IP 限流（普通接口 30r/m，成稿/Agent/流水线 6r/m）；CORS 可通过环境变量收紧。4.4 节给出公网 HTTPS 的正式方案。
+
+### 4.4 生产 HTTPS（域名 + Let's Encrypt）
+
+本机开发用 4.3 的 8080 明文即可；**公网部署必须走这一节**，否则 Basic Auth 密码会被明文传输。
+
+**服务器与域名怎么选**
+
+| 方案 | 适合 | 代价 |
+| --- | --- | --- |
+| 国内轻量云（阿里云 / 腾讯云，2 核 4G 起） | 国内访问快，长期自用 | 域名必须 **ICP 备案**（约 10–20 天），且域名要在国内注册商购买 |
+| 海外 VPS + 海外注册商域名 | 急着上线、不想备案 | 国内访问延迟高且不稳定 |
+
+服务器要求：能装 Docker、80/443 未被占用、内存 ≥2G（首次加载约 95MB 的 embedding 模型）。域名准备一条指向服务器公网 IP 的 `A` 记录，等 DNS 生效后再执行下面步骤。
+
+**启用步骤**（在服务器项目根目录）
+
+```bash
+cp .env.example .env
+# 在 .env 中填好 CAMPUS_DOMAIN（裸域名）、CAMPUS_TLS_EMAIL、密钥与 Basic Auth 口令
+
+# 1. 构建镜像（只需一次；后续改代码再执行）
+docker compose -f docker-compose.yml -f docker-compose.prod.yml build
+
+# 2. 申请证书并切到 HTTPS（内部：HTTP 引导 → ACME 校验 → 重启 web）
+./deploy/init-tls.sh              # 首次调试可先 ./deploy/init-tls.sh --staging
+
+# 3. 验证
+curl -I https://你的域名/                                  # 200 + HSTS
+curl -I http://你的域名/                                   # 301 跳转
+curl -u "$CAMPUS_BASIC_USER:$CAMPUS_BASIC_PASSWORD" https://你的域名/api/health
+```
+
+以后日常启停都带两个 compose 文件：
+
+```bash
+docker compose -f docker-compose.yml -f docker-compose.prod.yml ps
+docker compose -f docker-compose.yml -f docker-compose.prod.yml logs -f web
+docker compose -f docker-compose.yml -f docker-compose.prod.yml down
+```
+
+**自动续期**：`certbot` 容器每 12 小时尝试续期，nginx 每 6 小时重载一次加载新证书，无需人工。`/.well-known/acme-challenge/` 是唯一免 Basic Auth 的路径（Let's Encrypt 校验请求不带密码），其余路径仍整站鉴权。证书未就绪时 web 自动以 HTTP 引导模式运行，申请成功后重启 web 即切换到 HTTPS，因此 `init-tls.sh` 可以重复执行。
 
 ## 5. 前端做了什么
 
@@ -273,6 +314,7 @@ curl -u "$CAMPUS_BASIC_USER:$CAMPUS_BASIC_PASSWORD" http://127.0.0.1:8080/api/he
 - **11-25 配图全部改占位展示**：用户明确「以后只用占位图」。图卡不再渲染 `<img>`，改为灰底斜纹占位块（「配图占位」+ 原图尺寸），下面仍给图注、性质、来源与日期，点「取原图」才请求 `/api/figure/{id}`。图库匹配逻辑不动；导出 Markdown 去掉 `![](url)`，改写 `〔配图占位：图注〕　参考来源：《…》日期`——本地接口地址贴到公众号后台打不开。顺带消掉旧 id 404 破图问题，首屏也不再拉几十张几百 KB 原图（截图验证页面 `img` 元素为 0）。
 - **11-25 图库重建：顺序 id 换内容哈希**：语料扩到 2331 张原图后，图库仍停在首批 24 篇的 177 张。直接重建会踩一个坑——`build_figure_index.py` 用 `f0001…` 顺序编号，文件夹按文章名排序，新文章插进中间会让后面所有 id 整体位移，`captions.raw.json` 里那批标注就错位到别的图上。改法是把 id 换成**内容哈希**（`f` + sha1 前 10 位），标注库 `captions.json` 以 id 为键，重建多少次都不变（实测连跑两次，672 个 id 顺序完全一致、标注零丢失）；老索引的 177 条标注用 `tools/migrate_captions.py` 按字节重算哈希一次性认领。同时把标注流程改成**增量式**：`make_contact_sheets.py` 只拼未标注的图（sheet 编号接着往下排、映射累加不覆盖），`apply_captions.py` 累加合并并清理失效 id。结果：**672 张全部标注完毕、397 张可推**（原 120 张），新增 495 张分了 18 批九宫格标完。真实成稿验证：《2026级本科新生报到与入学指引》配图从「3 张全弱命中」变「8 张全强命中」——报到段落推出「新生在报到现场排队交谈」「新生在报到台办理资格核验」，开学典礼段落推出「嘉宾在开学典礼上讲台致辞」，来源都是新入库推文。**副作用**：改造前存的草稿里旧 `f0001` 链接会 404，重新生成即可。后端 162 项测试全绿。
 - **11-25 P3 一键成稿流水线**：此前写文章要手动串四步——生成 → 看校验 → 自己改 → 点导出，仍是「工具拼装」不是「Agent 助手」。新增 `api/pipeline.py` 编排 + `POST /api/pipeline/stream`（SSE），复用 `compose.py` 的确定性函数不重复实现：检索语料 → Agent 成稿（逐字 delta）→ 发前检查 → error 级命中时自动改稿一轮（最多一次避免烧 token）→ 排版导出。事件 `meta`（文体 + 计划步骤 + 素材数）→ `step` 与 `delta` 交错 → `done`（结果同 `/api/compose`，另带 pipeline 轨迹）。写文章页主按钮改为「一键成稿」（右侧实时四步轨迹、完成显示自动修订轮数），「生成文章」保留为手动接力改稿入口。自动修订范围只取 error 级命中转指令，warn/info 不误触发；`autoRevise=false` 可关。真实链路：首字节 0.009s、4 step + 1040 delta、成稿 8 段全有据、校验 0 命中、HTML 5934 字符带 8 占位框。后端 209 → **215 项**、前端 98 → **101 项**。
+- **11-25 P2 公网 HTTPS 准备**：用户打算买服务器与域名（当前本机是电信家宽、无公网 IP，没法直接端口映射），先把生产 TLS 配置做好，等域名到手一条命令启用。新增 `docker-compose.prod.yml`（覆盖 8080 为 80/443，加 certbot 容器每 12h 续期）+ `deploy/nginx-tls.conf` / `nginx-bootstrap.conf` / `nginx-locations.conf`：证书未就绪时走 HTTP 引导模式保留 ACME 校验，申请后重启 web 自动切 HTTPS。`deploy/init-tls.sh` 负责域名/DNS 预检、webroot 申请（支持 `--staging`/`--force`）、切换。两个真实坑：① `add_header` 在 location 级不继承，`/index.html` 的 Cache-Control 把 server 级 HSTS 覆盖了 → 改成按模式模板渲染 `__HSTS__`；② 整站 Basic Auth 把 `/.well-known/acme-challenge/` 也挡成 401，Let's Encrypt 不带密码 → 该路径单独 `auth_basic off`。本地用自签证书在隔离项目名验证：HTTPS 200/HTTP 301/HSTS 存在/ACME 匿名 404/Basic Auth 401、Agent SSE 首字节 0.029s + 190 delta + done（HTTP/2 下无缓冲），引导模式同样通过；测试栈已清理，主 8080 服务未受影响。顺带把新加的 `/api/pipeline/*` 补进生成类接口限流。README 新增 4.4 节含服务器/域名选购（国内备案 vs 海外免备案）与完整启用步骤。
 
 - **11-24 逐篇入库通道**：用户拿不到公众号后台登录态，只能一篇篇复制链接，原「先导 `urls.txt` 再批量抓」的路径走不通。抓取工具改为接受**任意粘贴文本**：全局扫描 `mp.weixin.qq.com/s` 链接，标题、分享卡片、粘连无分隔、带 `?scene=1#rd` 追踪参数的都能解析；短链归一成规范形态，同一篇从不同入口复制多次只抓一遍。新增 `--paste`（读 stdin）与 `corpus` 外的累积收件箱 `inbox.txt`（不带任何参数时默认读它，已 gitignore），攒几条抓一次、已入库自动跳过。过程中修掉一个真 bug：整体正则贪婪匹配会吞掉相邻链接的 `https`，实测 4 条粘连链接只抽到 2 条，改为前缀与正文分开扫描。后端测试 67 → **79 项**（新增 12 项链接抽取与来源汇总测试）。
 - **11-24 定位再明确 + 文章生成（主线落地）**：用户再次明确整体定位是「RAG 知识库 + Agent 助手 → 生成可使用的微信公众号文章」，规范校验只是其中一个功能；据此把全项目定位表述（README 三份、前端文案、模块 docstring、Agent system prompt）统一改正。随后实现 P0 主线功能：新增 `api/compose.py` 三段流水线（确定性检索素材编号 → DeepSeek JSON 模式成稿 → 后端校验出处 + 发前规范检查），`POST /api/compose`；前端新增 `#/compose` 写文章页（选题输入、结构化草稿预览、引用标记、配图建议、事实依据、发前检查、复制/下载 Markdown），首页主 CTA 改为「开始写文章」。真实调用暴露一个误报——发前检查把 SUB-* 投稿格式规则套到公众号文章上，改用 `archive` 模式跳过（公众号非投稿件）。真实密钥端到端验证：产出标题/导语/3 节正文/3 条配图建议，`grounded=True`、发前检查 0 误报。后端 79 → **94 项**、前端 68 → **72 项**。

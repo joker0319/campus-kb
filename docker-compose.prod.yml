@@ -1,0 +1,41 @@
+# 生产叠加层：在 docker-compose.yml 之上启用 HTTPS + Let's Encrypt 自动续期。
+#   docker compose -f docker-compose.yml -f docker-compose.prod.yml up -d
+# 首次使用先执行 ./deploy/init-tls.sh 申请证书；证书未就绪时 web 自动以 HTTP 引导模式运行。
+
+services:
+  web:
+    # 覆盖基线的 8080:80，公网只开 80（ACME + 跳转）与 443（HTTPS）
+    ports: !override
+      - "80:80"
+      - "443:443"
+    environment:
+      CAMPUS_TLS_MODE: "on"
+      CAMPUS_DOMAIN: ${CAMPUS_DOMAIN:?请在根目录 .env 中填入 CAMPUS_DOMAIN}
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-www:/var/www/certbot:ro
+    depends_on:
+      api:
+        condition: service_healthy
+
+  certbot:
+    image: certbot/certbot:latest
+    restart: unless-stopped
+    # 常驻循环：每 12 小时尝试续期；nginx 侧每 6 小时 reload 以加载新证书。
+    # 用 command 而非 entrypoint，这样 init-tls.sh 能用 compose run 临时执行 certonly。
+    command:
+      - sh
+      - -c
+      - |
+        trap exit TERM
+        while :; do
+          certbot renew --webroot -w /var/www/certbot --quiet || true
+          sleep 12h & wait $$!
+        done
+    volumes:
+      - certbot-etc:/etc/letsencrypt
+      - certbot-www:/var/www/certbot
+
+volumes:
+  certbot-etc:
+  certbot-www:
