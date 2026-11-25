@@ -29,7 +29,8 @@ python3 checker.py samples/bad-draft.md --json           # 供其他系统调用
 ```bash
 uv sync                                                   # 安装依赖
 uv run uvicorn api.main:app --reload --port 8000          # 启动
-uv run pytest                                             # 181 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、配图推荐 16 项、流式成稿 6 项、排版导出 9 项、语义检索 15 项
+uv run pytest                                             # 196 个用例，含 bad 17 / good 0 基线、文章生成 19 项、文体模板 14 项、配图推荐 16 项、流式成稿 6 项、排版导出 9 项、语义检索 15 项、主权表述 15 项
+uv run pytest -n 4                                        # 并行（xdist 已装）。当前用例全为毫秒级，串行 1.1s 快于并行，仅在测试变重后再开
 ```
 
 | 接口 | 说明 |
