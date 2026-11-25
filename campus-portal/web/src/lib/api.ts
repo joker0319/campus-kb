@@ -187,6 +187,92 @@ export async function postAgent(
   return (await r.json()) as AgentResult;
 }
 
+export interface AgentStreamHandlers {
+  /** 首帧：本次使用的模型名 */
+  onMeta?: (model: string) => void;
+  /** 一次工具执行完成，index 为本轮轨迹序号（从 0 开始） */
+  onStep?: (step: AgentStep, index: number) => void;
+  /** 最终回答的文本增量 */
+  onDelta?: (text: string) => void;
+}
+
+type AgentStreamEvent = {
+  type?: string;
+  model?: string;
+  step?: AgentStep;
+  text?: string;
+  result?: AgentResult;
+  message?: string;
+};
+
+/** 助手流式问答：工具轨迹与回答边到边显示，结束时返回完整结果（同 postAgent）。 */
+export async function streamAgent(
+  message: string,
+  history: readonly ChatTurn[] = [],
+  handlers: AgentStreamHandlers = {},
+  signal?: AbortSignal,
+): Promise<AgentResult> {
+  const r = await fetch('/api/agent/stream', {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
+    body: JSON.stringify({ message, history }),
+    signal,
+  });
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `助手流式接口返回 ${r.status}`);
+  }
+  if (!r.body) throw new Error('当前浏览器不支持流式读取');
+
+  const reader = r.body.getReader();
+  const decoder = new TextDecoder();
+  const box: { result: AgentResult | null } = { result: null };
+  let stepIndex = 0;
+  let buffer = '';
+
+  const handle = (frame: string) => {
+    const line = frame.split('\n').find((ln) => ln.startsWith('data:'));
+    if (!line) return;
+    let event: AgentStreamEvent;
+    try {
+      event = JSON.parse(line.slice(5).trim()) as AgentStreamEvent;
+    } catch {
+      return;
+    }
+    if (event.type === 'meta' && event.model) {
+      handlers.onMeta?.(event.model);
+    } else if (event.type === 'step' && event.step) {
+      handlers.onStep?.(event.step, stepIndex++);
+    } else if (event.type === 'delta' && event.text) {
+      handlers.onDelta?.(event.text);
+    } else if (event.type === 'done' && event.result) {
+      box.result = event.result;
+    } else if (event.type === 'error') {
+      throw new Error(event.message || '助手调用失败，请重试');
+    }
+  };
+
+  try {
+    for (;;) {
+      const { done, value } = await reader.read();
+      if (done) break;
+      buffer += decoder.decode(value, { stream: true });
+      let cut = buffer.indexOf('\n\n');
+      while (cut >= 0) {
+        const frame = buffer.slice(0, cut);
+        buffer = buffer.slice(cut + 2);
+        handle(frame);
+        cut = buffer.indexOf('\n\n');
+      }
+    }
+  } finally {
+    reader.releaseLock();
+  }
+
+  if (!box.result) throw new Error('回答中断，没有收到完整结果');
+  return box.result;
+}
+
 /** POST /api/compose 文章生成（见 campus-kb/api/compose.py / schemas.py） */
 export interface ComposeSource {
   readonly ref: string;

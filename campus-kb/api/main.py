@@ -230,6 +230,50 @@ async def agent_chat(req: AgentRequest, engine: EngineDep) -> AgentResponse:
     return AgentResponse(**result)
 
 
+@app.post("/api/agent/stream")
+async def agent_stream(req: AgentRequest, engine: EngineDep) -> StreamingResponse:
+    """助手流式问答（SSE）：工具轨迹与回答增量实时下发。
+
+    事件序列：`meta`（模型名）→ 若干 `step`（工具执行完即推）→ 若干 `delta`
+    （回答文本增量）→ `done`（完整结果，字段同 /api/agent）。
+    响应开始后无法改状态码，上游失败改发 `error` 事件。
+    """
+    if not deepseek.get_settings().configured:
+        raise HTTPException(
+            status_code=503,
+            detail="未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥",
+        )
+
+    async def frames():
+        try:
+            async for event in agent.run_agent_stream(
+                req.message,
+                engine[0],
+                [m.model_dump() for m in req.history],
+            ):
+                yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
+        except (
+            deepseek.DeepSeekUnavailable,
+            deepseek.DeepSeekNotConfigured,
+            KeyError,
+            IndexError,
+            TypeError,
+            ValueError,
+        ) as exc:
+            payload = {"type": "error", "message": str(exc)}
+            yield f"data: {json.dumps(payload, ensure_ascii=False)}\n\n"
+
+    return StreamingResponse(
+        frames(),
+        media_type="text/event-stream",
+        headers={
+            "Cache-Control": "no-cache",
+            "Connection": "keep-alive",
+            "X-Accel-Buffering": "no",
+        },
+    )
+
+
 @app.post("/api/compose")
 async def compose(req: ComposeRequest, engine: EngineDep) -> ComposeResponse:
     """文章生成：检索知识库 → DeepSeek 成稿 → 后端校验出处与规范。

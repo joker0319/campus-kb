@@ -1,14 +1,7 @@
-import { render, screen, waitFor } from '@testing-library/react';
+import { act, render, screen, waitFor } from '@testing-library/react';
 import userEvent from '@testing-library/user-event';
 import { afterEach, beforeEach, describe, expect, it, vi } from 'vitest';
 import App from '../App';
-
-const jsonResponse = (body: unknown): Promise<Response> =>
-  Promise.resolve({
-    ok: true,
-    status: 200,
-    json: () => Promise.resolve(body),
-  } as Response);
 
 const AGENT_ANSWER = {
   answer: '根据档案，奠基仪式于 2021 年 4 月 22 日举行。',
@@ -40,6 +33,38 @@ const AGENT_ANSWER = {
   truncated: false,
 };
 
+const frame = (event: unknown) => `data: ${JSON.stringify(event)}\n\n`;
+
+/** 一次给齐所有帧的假后端，用于非流式的常规断言。 */
+const agentFrames = (payload = AGENT_ANSWER): string => {
+  const cut = Math.floor(payload.answer.length / 2);
+  return (
+    frame({ type: 'meta', model: payload.model }) +
+    payload.steps.map((s) => frame({ type: 'step', step: s })).join('') +
+    frame({ type: 'delta', text: payload.answer.slice(0, cut) }) +
+    frame({ type: 'delta', text: payload.answer.slice(cut) }) +
+    frame({ type: 'done', result: payload })
+  );
+};
+
+/** 手动推帧的假后端，用来卡在"只写了半句"检查中间态。 */
+function controlledStream() {
+  const encoder = new TextEncoder();
+  let push: (f: string) => void = () => {};
+  let close: () => void = () => {};
+  const body = new ReadableStream<Uint8Array>({
+    start(controller) {
+      push = (f) => controller.enqueue(encoder.encode(f));
+      close = () => controller.close();
+    },
+  });
+  vi.stubGlobal(
+    'fetch',
+    vi.fn(() => Promise.resolve(new Response(body, { status: 200 }))),
+  );
+  return { push, close };
+}
+
 describe('助手页 Agent 模式', () => {
   beforeEach(() => {
     window.location.hash = '#/assistant';
@@ -48,7 +73,14 @@ describe('助手页 Agent 模式', () => {
       vi.fn((input: RequestInfo | URL) => {
         const url =
           typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-        if (url.includes('/api/agent')) return jsonResponse(AGENT_ANSWER);
+        if (url.includes('/api/agent/stream')) {
+          return Promise.resolve(
+            new Response(agentFrames(), {
+              status: 200,
+              headers: { 'Content-Type': 'text/event-stream' },
+            }),
+          );
+        }
         throw new Error(`unexpected url ${url}`);
       }),
     );
@@ -93,12 +125,76 @@ describe('助手页 Agent 模式', () => {
     const fetchMock = vi.mocked(fetch);
     const agentCall = fetchMock.mock.calls.find(([input]) => {
       const url = typeof input === 'string' ? input : input instanceof URL ? input.href : input.url;
-      return url.includes('/api/agent');
+      return url.includes('/api/agent/stream');
     });
     expect(agentCall).toBeTruthy();
     expect(JSON.parse((agentCall![1] as RequestInit).body as string)).toEqual({
       message: '奠基仪式是什么时候？',
       history: [],
+    });
+  });
+
+  it('流式作答：轨迹先到，回答按增量逐字出现', async () => {
+    const { push, close } = controlledStream();
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy(),
+    );
+
+    await user.type(screen.getByLabelText('助手输入框'), '奠基仪式是什么时候？');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+    expect(screen.getByText('正在判断该用哪个工具…')).toBeTruthy();
+
+    await act(async () => {
+      push(frame({ type: 'meta', model: 'deepseek-chat' }));
+      push(frame({ type: 'step', step: AGENT_ANSWER.steps[0] }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => expect(screen.getByText('查档案')).toBeTruthy());
+    // 回答还没开始，不该提前出现成品文本
+    expect(screen.queryByText(/2021 年 4 月 22 日举行/)).toBeNull();
+
+    await act(async () => {
+      push(frame({ type: 'delta', text: '根据档案，' }));
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => expect(screen.getByText(/根据档案，/)).toBeTruthy());
+    expect(screen.queryByText(/2021 年 4 月 22 日举行/)).toBeNull();
+
+    await act(async () => {
+      push(frame({ type: 'delta', text: '奠基仪式于 2021 年 4 月 22 日举行。' }));
+      push(frame({ type: 'done', result: AGENT_ANSWER }));
+      close();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/2021 年 4 月 22 日举行/)).toBeTruthy();
+    });
+    // done 后流式光标撤掉，轨迹按完整结果重绘
+    expect(document.querySelector('[class*="streamCursor"]')).toBeNull();
+    expect(screen.getByText('查规范')).toBeTruthy();
+  });
+
+  it('流里的 error 事件转成页面报错', async () => {
+    const { push, close } = controlledStream();
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy(),
+    );
+
+    await user.type(screen.getByLabelText('助手输入框'), '校名规范');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    await act(async () => {
+      push(frame({ type: 'meta', model: 'deepseek-chat' }));
+      push(frame({ type: 'error', message: '上游不可用' }));
+      close();
+      await new Promise((resolve) => setTimeout(resolve, 0));
+    });
+    await waitFor(() => {
+      expect(screen.getByText(/查询失败：上游不可用/)).toBeTruthy();
     });
   });
 

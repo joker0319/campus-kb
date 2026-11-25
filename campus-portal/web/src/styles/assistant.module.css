@@ -188,6 +188,26 @@
   white-space: pre-wrap;
   word-break: break-word;
 }
+/* 流式作答时的光标，跟在最后一个字后面；减少动效偏好下不闪 */
+.streamCursor {
+  display: inline-block;
+  width: 2px;
+  height: 1em;
+  margin-left: 2px;
+  vertical-align: -0.15em;
+  background: var(--brand);
+  animation: cursorBlink 900ms steps(2, end) infinite;
+}
+@keyframes cursorBlink {
+  50% {
+    opacity: 0;
+  }
+}
+@media (prefers-reduced-motion: reduce) {
+  .streamCursor {
+    animation: none;
+  }
+}
 .ansSrcHead {
   margin: 2px 0 6px;
   font-family: var(--mono);

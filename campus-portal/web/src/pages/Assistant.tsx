@@ -1,5 +1,5 @@
 import { useEffect, useRef, useState } from 'react';
-import { postAgent, type AgentResult, type ChatTurn } from '../lib/api';
+import { streamAgent, type AgentResult, type AgentStep, type ChatTurn } from '../lib/api';
 import { SoftBackdrop } from '../components/SoftBackdrop';
 import s from '../styles/assistant.module.css';
 
@@ -9,6 +9,10 @@ type Turn = {
   readonly result?: AgentResult;
   readonly error?: string;
   readonly pending?: boolean;
+  /** 流式过程中已收到的回答文本与工具轨迹，done 后立刻清空 */
+  readonly streamText?: string;
+  readonly streamSteps?: readonly AgentStep[];
+  readonly model?: string;
 };
 
 const TOOL_LABEL: Record<string, string> = {
@@ -47,6 +51,47 @@ function stepItems(step: AgentResult['steps'][number]): readonly string[] {
   return [];
 }
 
+/** 工具轨迹：流式过程中与成稿后共用一套展示，避免两处结构漂移。 */
+function StepsView({ steps }: { steps: readonly AgentStep[] }) {
+  if (steps.length === 0) {
+    return <p className={s.ansNoTool}>本轮未调用工具，直接作答。</p>;
+  }
+  return (
+    <>
+      <div className={s.ansSrcHead}>执行轨迹</div>
+      <div className={s.stepList}>
+        {steps.map((step, i) => {
+          const items = stepItems(step);
+          return (
+            <div className={s.step} key={`${step.callId}-${i}`}>
+              <div className={s.stepHead}>
+                <span className={s.stepIdx}>{i + 1}</span>
+                <span className={s.stepTool}>{TOOL_LABEL[step.tool] ?? step.tool}</span>
+                <span className={s.stepArgs}>{Object.values(step.args).join(' · ')}</span>
+              </div>
+              {items.length > 0 ? (
+                <div className={s.stepItems}>
+                  {items.map((line, j) => (
+                    <div className={s.stepItem} key={j}>
+                      {line}
+                    </div>
+                  ))}
+                </div>
+              ) : null}
+              {step.result.kind === 'review' && step.result.counts ? (
+                <div className={s.stepCount}>
+                  命中 {step.result.counts.total} 项 · 错误 {step.result.counts.error} / 警告{' '}
+                  {step.result.counts.warn}
+                </div>
+              ) : null}
+            </div>
+          );
+        })}
+      </div>
+    </>
+  );
+}
+
 /** 内容助手（Agent）：一句话进去，模型检索知识库自选工具，产出有出处的回答，辅助写公众号文章。 */
 export default function Assistant() {
   const [draft, setDraft] = useState('');
@@ -79,12 +124,31 @@ export default function Assistant() {
     );
 
     try {
-      const result = await postAgent(query, history);
-      patch(id, { result, pending: false });
+      const result = await streamAgent(query, history, {
+        onMeta: (model) => patch(id, { model }),
+        onStep: (step) =>
+          setTurns((prev) =>
+            prev.map((t) =>
+              t.id === id ? { ...t, streamSteps: [...(t.streamSteps ?? []), step] } : t,
+            ),
+          ),
+        onDelta: (text) =>
+          setTurns((prev) =>
+            prev.map((t) => (t.id === id ? { ...t, streamText: (t.streamText ?? '') + text } : t)),
+          ),
+      });
+      patch(id, {
+        result,
+        pending: false,
+        streamText: undefined,
+        streamSteps: undefined,
+      });
     } catch (err: unknown) {
       patch(id, {
         error: err instanceof Error ? err.message : '调用失败',
         pending: false,
+        streamText: undefined,
+        streamSteps: undefined,
       });
     }
   };
@@ -148,7 +212,18 @@ export default function Assistant() {
                 {t.pending ? (
                   <div className={s.botMsg}>
                     <span className={s.ansTool}>Agent</span>
-                    <p className={s.ansSummary}>正在判断该用哪个工具…</p>
+                    {t.model ? <span className={s.ansAi}>{t.model}</span> : null}
+                    {t.streamText ? (
+                      <p className={`${s.ansSummary} ${s.ansAiText}`}>
+                        {cleanAnswer(t.streamText)}
+                        <span className={s.streamCursor} aria-hidden="true" />
+                      </p>
+                    ) : (
+                      <p className={s.ansSummary}>正在判断该用哪个工具…</p>
+                    )}
+                    {t.streamSteps && t.streamSteps.length > 0 ? (
+                      <StepsView steps={t.streamSteps} />
+                    ) : null}
                   </div>
                 ) : t.error ? (
                   <div className={s.botMsg}>
@@ -166,46 +241,7 @@ export default function Assistant() {
                       {cleanAnswer(t.result.answer)}
                     </p>
 
-                    {t.result.steps.length > 0 ? (
-                      <>
-                        <div className={s.ansSrcHead}>执行轨迹</div>
-                        <div className={s.stepList}>
-                          {t.result.steps.map((step, i) => {
-                            const items = stepItems(step);
-                            return (
-                              <div className={s.step} key={`${step.callId}-${i}`}>
-                                <div className={s.stepHead}>
-                                  <span className={s.stepIdx}>{i + 1}</span>
-                                  <span className={s.stepTool}>
-                                    {TOOL_LABEL[step.tool] ?? step.tool}
-                                  </span>
-                                  <span className={s.stepArgs}>
-                                    {Object.values(step.args).join(' · ')}
-                                  </span>
-                                </div>
-                                {items.length > 0 ? (
-                                  <div className={s.stepItems}>
-                                    {items.map((line, j) => (
-                                      <div className={s.stepItem} key={j}>
-                                        {line}
-                                      </div>
-                                    ))}
-                                  </div>
-                                ) : null}
-                                {step.result.kind === 'review' && step.result.counts ? (
-                                  <div className={s.stepCount}>
-                                    命中 {step.result.counts.total} 项 · 错误{' '}
-                                    {step.result.counts.error} / 警告 {step.result.counts.warn}
-                                  </div>
-                                ) : null}
-                              </div>
-                            );
-                          })}
-                        </div>
-                      </>
-                    ) : (
-                      <p className={s.ansNoTool}>本轮未调用工具，直接作答。</p>
-                    )}
+                    <StepsView steps={t.result.steps} />
 
                     <p className={s.ansAiNote}>
                       由 DeepSeek

@@ -16,7 +16,7 @@
 from __future__ import annotations
 
 import json
-from typing import Any, Callable
+from typing import Any, AsyncIterator, Callable
 
 import httpx
 
@@ -296,6 +296,17 @@ def _parse_args(raw: Any) -> dict[str, Any]:
     return {}
 
 
+def _build_messages(question: str, history: list[dict] | None) -> list[dict[str, Any]]:
+    """流式与非流式共用同一段上下文拼装，避免两条路径的对话历史漂移。"""
+    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
+    for turn in (history or [])[-6:]:
+        role = turn.get("role")
+        if role in ("user", "assistant") and isinstance(turn.get("content"), str):
+            messages.append({"role": role, "content": turn["content"]})
+    messages.append({"role": "user", "content": question})
+    return messages
+
+
 async def run_agent(
     question: str,
     rules: list[dict],
@@ -312,12 +323,7 @@ async def run_agent(
         raise deepseek.DeepSeekNotConfigured("未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥")
 
     execute = make_executor(rules)
-    messages: list[dict[str, Any]] = [{"role": "system", "content": SYSTEM_PROMPT}]
-    for turn in (history or [])[-6:]:
-        role = turn.get("role")
-        if role in ("user", "assistant") and isinstance(turn.get("content"), str):
-            messages.append({"role": role, "content": turn["content"]})
-    messages.append({"role": "user", "content": question})
+    messages = _build_messages(question, history)
 
     url = f"{cfg.deepseek_base_url.rstrip('/')}/chat/completions"
     steps: list[dict[str, Any]] = []
@@ -387,6 +393,152 @@ async def run_agent(
         }
     except (httpx.HTTPError, KeyError, IndexError, TypeError, ValueError) as exc:
         raise deepseek.DeepSeekUnavailable(f"DeepSeek Agent 调用失败：{exc}") from exc
+    finally:
+        if owns_client:
+            await http.aclose()
+
+
+def _accumulate_tool_calls(buf: dict[int, dict[str, Any]], parts: list[dict]) -> None:
+    """把流式分片合并成完整的 tool_calls。
+
+    OpenAI/DeepSeek 的流式 function calling 里 name 与 arguments 会跨多帧到达，
+    用 index 归组后逐段拼接；直接取最后一帧只会拿到残缺的 JSON 参数。
+    """
+    for part in parts:
+        idx = int(part.get("index") or 0)
+        cur = buf.setdefault(
+            idx,
+            {"id": "", "type": "function", "function": {"name": "", "arguments": ""}},
+        )
+        if part.get("id"):
+            cur["id"] = str(part["id"])
+        if part.get("type"):
+            cur["type"] = str(part["type"])
+        fn = part.get("function") or {}
+        if fn.get("name"):
+            cur["function"]["name"] += str(fn["name"])
+        if fn.get("arguments"):
+            cur["function"]["arguments"] += str(fn["arguments"])
+
+
+async def run_agent_stream(
+    question: str,
+    rules: list[dict],
+    history: list[dict] | None = None,
+    settings: deepseek.Settings | None = None,
+    client: httpx.AsyncClient | None = None,
+) -> AsyncIterator[dict[str, Any]]:
+    """Agent 循环的流式版本，产出 SSE 事件字典。
+
+    事件序列：`meta`（模型名）→ 每完成一次工具调用一条 `step` → 最终回答的若干
+    `delta` → `done`（完整结果，字段同 AgentResponse）。工具决策轮仍走流式请求，
+    但没有 tool_calls 时才会有 content，因此逐段推给前端不会与工具轨迹串台。
+
+    与 run_agent 并存：非流式端点保持原行为，避免改动既有调用方与测试。
+    """
+    cfg = settings or deepseek.get_settings()
+    if not cfg.configured:
+        raise deepseek.DeepSeekNotConfigured("未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥")
+
+    execute = make_executor(rules)
+    messages = _build_messages(question, history)
+    url = f"{cfg.deepseek_base_url.rstrip('/')}/chat/completions"
+    steps: list[dict[str, Any]] = []
+    owns_client = client is None
+    http = client or httpx.AsyncClient(timeout=90)
+
+    try:
+        yield {"type": "meta", "model": cfg.deepseek_model}
+        for _step in range(MAX_STEPS):
+            answer_parts: list[str] = []
+            calls: dict[int, dict[str, Any]] = {}
+            try:
+                async with http.stream(
+                    "POST",
+                    url,
+                    headers={
+                        "Authorization": f"Bearer {cfg.deepseek_api_key}",
+                        "Content-Type": "application/json",
+                    },
+                    json={
+                        "model": cfg.deepseek_model,
+                        "messages": messages,
+                        "tools": TOOLS,
+                        "tool_choice": "auto",
+                        "temperature": 0.1,
+                        "stream": True,
+                    },
+                ) as response:
+                    response.raise_for_status()
+                    async for line in response.aiter_lines():
+                        if not line.startswith("data:"):
+                            continue
+                        payload = line[5:].strip()
+                        if not payload or payload == "[DONE]":
+                            continue
+                        try:
+                            chunk = json.loads(payload)
+                        except ValueError:
+                            continue  # 心跳/注释行
+                        choices = chunk.get("choices") or []
+                        if not choices:
+                            continue
+                        delta = choices[0].get("delta") or {}
+                        text = delta.get("content")
+                        if text:
+                            answer_parts.append(text)
+                            yield {"type": "delta", "text": text}
+                        _accumulate_tool_calls(calls, delta.get("tool_calls") or [])
+            except httpx.HTTPError as exc:
+                raise deepseek.DeepSeekUnavailable(f"DeepSeek Agent 调用失败：{exc}") from exc
+
+            tool_calls = [calls[k] for k in sorted(calls)]
+            if not tool_calls:
+                yield {
+                    "type": "done",
+                    "result": {
+                        "answer": "".join(answer_parts).strip(),
+                        "steps": steps,
+                        "model": cfg.deepseek_model,
+                        "usedTools": [s["tool"] for s in steps],
+                    },
+                }
+                return
+
+            messages.append({
+                "role": "assistant",
+                "content": "".join(answer_parts),
+                "tool_calls": tool_calls,
+            })
+            for call in tool_calls:
+                fn = call.get("function") or {}
+                name = str(fn.get("name", ""))
+                args = _parse_args(fn.get("arguments"))
+                result = execute(name, args)
+                step = {
+                    "tool": name, "args": args,
+                    "result": result["structured"],
+                    "callId": call.get("id", ""),
+                }
+                steps.append(step)
+                yield {"type": "step", "step": step}
+                messages.append({
+                    "role": "tool",
+                    "tool_call_id": call.get("id", ""),
+                    "content": result["text"],
+                })
+
+        # 步数用尽仍未收敛：明确告知，不把截断冒充正常回答
+        yield {
+            "type": "done",
+            "result": {
+                "answer": "已查询知识库，但问题较复杂，工具调用达到上限。请缩小问题范围后重试，或直接查看下方工具返回的结果。",
+                "steps": steps,
+                "model": cfg.deepseek_model,
+                "usedTools": [s["tool"] for s in steps],
+                "truncated": True,
+            },
+        }
     finally:
         if owns_client:
             await http.aclose()
