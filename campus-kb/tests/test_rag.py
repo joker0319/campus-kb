@@ -143,6 +143,18 @@ def test_strict_mode_keeps_old_and_behaviour(tmp_path):
     assert both["results"][0]["matchedBy"] == "strict"
 
 
+def test_result_exposes_full_chunk_text(tmp_path):
+    """列表摘要可以短，但成稿链路拿到的必须是完整块。"""
+    root = _corpus(
+        tmp_path,
+        {"a": "学校概况与办学理念 " * 8 + "2027年QS世界大学排名位列第52位\n"},
+    )
+    r = search.search("学校QS排名", root=root)
+    assert r["results"]
+    assert "第52位" in r["results"][0]["text"]
+    assert len(r["results"][0]["text"]) > len(r["results"][0]["excerpt"])
+
+
 def test_unknown_mode_is_treated_as_hybrid(tmp_path):
     root = _corpus(tmp_path, {"a": "产学研融合 " * 20})
     r = search.search("融合", root=root, mode="whatever")

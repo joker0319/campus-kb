@@ -357,6 +357,10 @@ def hybrid_search(
                 "line": c.start_line,
                 "endLine": c.end_line,
                 "excerpt": _excerpt(c, query),
+                # 完整块给成稿链路用：96 字摘要只服务检索结果列表，不能当写作素材。
+                # 摘要按首个查询词居中截取，关键事实（如「位列第52位」）常被截在窗口外，
+                # 模型拿不到就只能写「（素材不足，待补充）」。
+                "text": c.text,
                 "hits": round(sparse_scores.get(idx, 0.0) * 10) + 1,
                 "score": round(score, 6),
                 "similarity": round(dense_scores.get(idx, 0.0), 4),
@@ -388,6 +392,7 @@ def _strict_search(query: str, docs: tuple, limit: int) -> list[dict]:
                         "line": i,
                         "endLine": i,
                         "excerpt": s[max(0, first - 40) : first + 40].strip(),
+                        "text": s,
                         "hits": n,
                         "score": 0.0,
                         "similarity": 0.0,

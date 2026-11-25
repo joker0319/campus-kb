@@ -37,13 +37,15 @@ COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处�
 1. 只能用【素材库】中的事实。每个正文段落末尾必须标注它依据的素材编号，如 [A1][A3]。
 2. 素材库里没有的事实、数字、人名、日期一律不许写；宁可少写，不要编造或用常识补全。
 3. 如果素材不足以支撑某个部分，在该部分写「（素材不足，待补充）」，不要虚构。
-4. 语言符合公众号文风：标题抓人但不夸张，导语短，正文分小标题，段落简洁。
-5. 遵守给出的【写作规范】：标题与正文中校名首次出现写全称「香港城市大学（东莞）」，不要用「港城大」这类简称；
+4. 严禁把截断片段当正文：不要输出「…」「……」或「素材原文截断」「待补充」等编辑批注。
+   某句话在素材里不完整就整句不用，宁可少写一段，也不要照抄半句或补出解释。
+5. 语言符合公众号文风：标题抓人但不夸张，导语短，正文分小标题，段落简洁。
+6. 遵守给出的【写作规范】：标题与正文中校名首次出现写全称「香港城市大学（东莞）」，不要用「港城大」这类简称；
    集体提法「港澳台」必须写成「港澳台地区」或「港澳台同胞」，不能光写「港澳台」
    （但「港澳台侨联招」「港澳台办」这类专有名词照原样，不要改写成「港澳台地区侨联招」）；
    校领导姓名旁边要带职务全称（如「执行校长鲁春教授」「副校长（学术）李娟教授」），不要只写「副校长」；
    中文用全角标点。
-6. 输出严格的 JSON（不要 markdown 代码块），结构如下：
+7. 输出严格的 JSON（不要 markdown 代码块），结构如下：
 {
   "title": "文章标题",
   "lead": "导语，100 字以内",
@@ -54,7 +56,7 @@ COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处�
   ],
   "imageSuggestions": [{"after": "小标题或段落序号", "description": "建议配图内容"}]
 }
-7. cites 数组里只能填【素材库】中真实存在的编号；没有依据的段落 cites 留空并把 text 写为「（素材不足，待补充）」。
+8. cites 数组里只能填【素材库】中真实存在的编号；没有依据的段落 cites 留空并把 text 写为「（素材不足，待补充）」。
 """
 
 REVISE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的公众号编辑，正在修改一篇已成型草稿。
@@ -64,12 +66,13 @@ REVISE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的
 1. 素材编号 A# 与当前草稿一致，cites 只能引用【素材库】里真实存在的编号，不许编新编号。
 2. 不许引入素材库之外的事实、数字、人名、日期；原稿没有的事实依然不许补。
 3. 指令没提到的标题、小标题、段落、配图建议逐字保留，不要顺手润色或重排结构。
-4. 按指令需要拆并段落时，cites 跟随内容迁移，不要丢失出处。
-5. 输出完整的文章 JSON（不要 markdown 代码块），结构与当前草稿完全一致：
+4. 不许输出「…」「……」或「素材原文截断」「待补充」等编辑批注；不完整的句子直接删掉。
+5. 按指令需要拆并段落时，cites 跟随内容迁移，不要丢失出处。
+6. 输出完整的文章 JSON（不要 markdown 代码块），结构与当前草稿完全一致：
 {"title": "", "lead": "", "sections": [{"heading": "", "paragraphs": [{"text": "", "cites": []}]}], "imageSuggestions": [{"after": "", "description": ""}]}
-6. 遵守【写作规范】与【口径约束】；标题与正文里校名首次出现写全称「香港城市大学（东莞）」，
+7. 遵守【写作规范】与【口径约束】；标题与正文里校名首次出现写全称「香港城市大学（东莞）」，
    不要为了标题简短改成「港城大」等简称。
-7. 改稿时顺手守住两条口径：「港澳台」写全为「港澳台地区」/「港澳台同胞」（「港澳台侨联招」等专名除外）；
+8. 改稿时顺手守住两条口径：「港澳台」写全为「港澳台地区」/「港澳台同胞」（「港澳台侨联招」等专名除外）；
    校领导姓名旁带职务全称。
 """
 
@@ -147,7 +150,9 @@ def gather_material(topic: str, rules: list[dict]) -> tuple[list[dict], list[dic
         blocks.append({
             "ref": ref,
             "kind": "wechat" if is_wx else "archive",
-            "text": r["excerpt"],
+            # 用完整块而不是 96 字摘要：摘要按首个查询词居中截取，
+            # 关键事实常被切在窗口外，模型会误判「素材不足」。
+            "text": r.get("text") or r["excerpt"],
             "file": r["file"] + ".txt",
             "line": r["line"],
         })
@@ -211,6 +216,16 @@ def _strip_code_fence(text: str) -> str:
 # 显示只出现一次，引用核对照样能发现无效编号。
 INLINE_CITE_RE = re.compile(r"[\[［]\s*([A-Za-z])\s*(\d{1,3})\s*[\]］]")
 
+# 兜底：模型偶尔仍会把被切断的素材句照抄进正文，连省略号和编辑批注一起带出来。
+# 这种半成品不能发给编辑，整句丢掉比留半句更安全。
+_SENTENCE_SPLIT_RE = re.compile(r"(?<=[。！？!?；;])")
+
+
+def _drop_truncated_sentences(text: str) -> str:
+    parts = _SENTENCE_SPLIT_RE.split(text)
+    kept = [p for p in parts if "…" not in p and "素材原文截断" not in p]
+    return "".join(kept).strip()
+
 
 def _split_inline_cites(text: str) -> tuple[str, list[str]]:
     found = [f"{m.group(1)}{m.group(2)}".upper() for m in INLINE_CITE_RE.finditer(text)]
@@ -229,7 +244,9 @@ def parse_article(raw: str) -> dict:
         data = {}
 
     def clean_text(value: Any) -> str:
-        return value.strip() if isinstance(value, str) else ""
+        if not isinstance(value, str):
+            return ""
+        return _drop_truncated_sentences(value.strip())
 
     sections: list[dict] = []
     for sec in data.get("sections") or []:

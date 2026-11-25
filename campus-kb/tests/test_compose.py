@@ -58,6 +58,22 @@ class TestGatherMaterial:
         blocks, _, _ = compose.gather_material("不存在的话题", rules)
         assert blocks == []
 
+    def test_uses_full_chunk_not_short_excerpt(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path) -> None:
+        """关键事实在 96 字之外时，成稿素材必须带完整块，不能只给摘要。"""
+        text = (
+            "学校概况与办学理念介绍部分很长很长，反复说明校园位于松山湖科学城，"
+            "坚持教研合一与两校一质，本科生从入学起就有机会进入实验室参与科研。"
+            "关键事实：2027年QS世界大学排名位列第52位。"
+        )
+        (tmp_path / "x_WX.txt").write_text(text + "\n", encoding="utf-8")
+        monkeypatch.setenv("CAMPUS_CORPUS_DIR", str(tmp_path))
+        monkeypatch.setenv("CAMPUS_EMBEDDING", "off")
+        rules, _ = checker.load_rules()
+        blocks, _, _ = compose.gather_material("学校QS排名", rules)
+
+        assert blocks
+        assert any("第52位" in b["text"] for b in blocks)
+
 
 class TestParseArticle:
     def test_parses_valid_json(self) -> None:
@@ -74,6 +90,19 @@ class TestParseArticle:
         article = compose.parse_article("not json")
         assert article["title"] == ""
         assert article["sections"] == []
+
+    def test_drops_truncated_sentences(self) -> None:
+        """被切断的素材句不能流到发布稿里，宁可整句丢掉。"""
+        payload = _article_payload()
+        payload["sections"][0]["paragraphs"][0]["text"] = (
+            "学校录取最低分为62…（素材原文截断，具体分数待补充）。完整事实在此。"
+        )
+        text = compose.parse_article(json.dumps(payload, ensure_ascii=False))[
+            "sections"
+        ][0]["paragraphs"][0]["text"]
+        assert "素材原文截断" not in text
+        assert "…" not in text
+        assert "完整事实在此。" in text
 
     def test_inline_cites_move_out_of_text(self) -> None:
         """模型把 [A1] 写进正文时，正文要干净、编号并回 cites，前端只渲染一次角标。"""

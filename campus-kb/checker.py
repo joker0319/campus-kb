@@ -299,9 +299,13 @@ def h_rank_conflict(rule, text):
         rule["params"].get("authority_key", ""), {}
     )
     canonical = auth.get("value", rule["params"].get("authoritative"))
+    # 只认「排名位次」写法：第52位 / 52nd / 位列52名。
+    # 旧模式抓任意 1-3 位数，会把「排名于今年6月发布」里的月份当成排名值，
+    # 和真正的第52位冲突后误报 RANK-001。
+    rank = r"(?:第\s*)?(\d{1,3})\s*(?:位|名|(?:st|nd|rd|th)\b)"
     pats = [
-        r"QS[^\n。；]{0,35}?%s[^\n。；]{0,18}?(\d{1,3})" % year,
-        r"%s[^\n。；]{0,35}?QS[^\n。；]{0,18}?(\d{1,3})" % year,
+        r"QS[^\n。；]{0,35}?%s[^\n。；]{0,18}?" % year + rank,
+        r"%s[^\n。；]{0,35}?QS[^\n。；]{0,18}?" % year + rank,
     ]
     hits = []
     for p in pats:

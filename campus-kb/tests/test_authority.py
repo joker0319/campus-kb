@@ -103,6 +103,16 @@ class TestCheckerAuthority:
         assert "[52, 63]" in rank[0]["message"]
         assert "权威口径" in rank[0]["message"]
 
+    def test_month_near_qs_is_not_a_rank(self, rules):
+        """「排名于今年6月发布」里的月份不能被当成排名值误报。"""
+        findings = checker.run(
+            "2027年QS世界大学排名于今年6月发布。"
+            "香港城市大学在本次排名中位列全球第52位。",
+            rules,
+            mode="archive",
+        )
+        assert not [f for f in findings if f["rule_id"] == "RANK-001"]
+
     def test_sample_baselines_unchanged(self, rules):
         good = (KB_ROOT / "samples/good-draft.md").read_text(encoding="utf-8")
         bad = (KB_ROOT / "samples/bad-draft.md").read_text(encoding="utf-8")

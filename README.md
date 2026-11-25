@@ -33,7 +33,7 @@
 | 文章生成 `#/compose` | ✅ 可用 | 选文体（自动判断 / 新闻动态 / 喜讯捷报 / 致辞讲稿，各带结构骨架与语气要求）→ 输入选题 → 检索知识库 → DeepSeek 成结构化草稿（标题/导语/分节正文/配图建议）→ 后端校验每段出处 + 发前规范检查；成稿后可**继续下指令改稿**（沿用原素材编号、保留多版本可回看），草稿存本地刷新不丢；无依据段落明确标注，不臆测。成稿同时给一份**内联样式 HTML**，点「复制排版」粘进公众号编辑器就是排好的版式。**成稿过程是流式的**：SSE 边写边显示，标题、导语、段落依次出现，不用干等十几秒。`POST /api/compose` + `POST /api/compose/stream` + `POST /api/compose/revise`，真实密钥端到端验证通过 |
 | 配图推荐 `api/figures.py` | ✅ 可用 | 把往期推文抓下的 2331 张原图筛成 **672 张真配图**（滤掉分隔线/图标/占位块/动图，按字节去重），逐张标注描述与性质，其中 **397 张可推荐**；id 用**内容哈希**（`f` + sha1 前 10 位），重建不清空标注；成稿按「图注 + 来源文章」给每节推可用真图，实景优先、肖像不推、分数不够宁可空着；界面**只显示占位块 + 图注 + 尺寸 + 来源**，不加载真实照片，需要那张图时点「取原图」；导出的 Markdown 写〔配图占位：图注〕，编辑按此替换实拍图 |
 | 公众号排版导出 `api/export_html.py` | ✅ 可用 | 结构化草稿 → 一段可直接粘进公众号编辑器的 HTML：**全部内联 `style`**（编辑器会把 `<style>` 与 class 剥掉）、标题居中、导语灰字、小标题带左侧竖线、正文 16px/1.9 两端对齐；不输出 `[A#]` 内部编号，跳过「素材不足」段，配图统一给虚线占位框（图注 + 尺寸 + 「请替换为对应现场照片」） |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/stream`（流式成稿 SSE）、`/api/compose/revise`（改稿）、`/api/figure/{id}`（往期配图下发）、`/api/figures/stats`（图库状态）、`/api/agent/stream`（助手 SSE），203 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/stream`（流式成稿 SSE）、`/api/compose/revise`（改稿）、`/api/figure/{id}`（往期配图下发）、`/api/figures/stats`（图库状态）、`/api/agent/stream`（助手 SSE），207 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 公众号语料入库 | ✅ 可用 | `campus-kb/tools/fetch_wechat.py` 抓自有公众号推文转 `corpus/text/*_WX.txt`，`_WX` 标记来源；文字型直接提取，长图型用 macOS Vision OCR（`tools/ocr.swift`，切片拼接识别）。入库即可被 `/api/search` 与 Agent 检索，无需重启 |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
@@ -81,7 +81,7 @@ cd campus-kb
 python3 checker.py samples/bad-draft.md                 # 终端输出（退出码：有 error 返回 1）
 python3 checker.py samples/bad-draft.md --json          # 供其他系统调用
 uv sync                                                 # 安装 API 依赖
-uv run pytest                                           # 203 个用例，默认 -n 4 并行；-n 0 串行
+uv run pytest                                           # 207 个用例，默认 -n 4 并行；-n 0 串行
 uv run uvicorn api.main:app --reload --port 8000        # 启动 API
 ```
 
