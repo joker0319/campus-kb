@@ -389,6 +389,18 @@
   color: var(--warn);
   font-style: italic;
 }
+.generalNote {
+  display: inline-block;
+  margin-left: 6px;
+  padding: 0 5px;
+  font-size: 10px;
+  line-height: 16px;
+  color: var(--warn);
+  border: 1px solid var(--warn);
+  border-radius: 4px;
+  vertical-align: 1px;
+  cursor: help;
+}
 
 .images {
   border-top: 1px solid var(--line-2);

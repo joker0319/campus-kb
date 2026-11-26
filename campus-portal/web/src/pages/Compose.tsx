@@ -626,9 +626,11 @@ export default function Compose() {
                 <span
                   className={`${s.badge} ${current.citations.grounded ? s.badgeOk : s.badgeWarn}`}
                 >
-                  {current.citations.grounded
-                    ? '全部段落有出处'
-                    : `${current.citations.uncitedParagraphs} 段待补充`}
+                  {current.citations.mode === 'general'
+                    ? `通识成稿 · ${current.citations.generalParagraphs ?? current.citations.uncitedParagraphs} 段需核对`
+                    : current.citations.grounded
+                      ? '全部段落有出处'
+                      : `${current.citations.uncitedParagraphs} 段待补充`}
                 </span>
                 <span
                   className={`${s.badge} ${current.review.counts.error === 0 ? s.badgeOk : s.badgeWarn}`}
@@ -745,6 +747,8 @@ export default function Compose() {
                             {sec.heading && <h3 className={s.secHeading}>{sec.heading}</h3>}
                             {sec.paragraphs.map((p, pi) => {
                               const isPlaceholder = p.text.startsWith('（素材不足');
+                              const isGeneral =
+                                current.citations.mode === 'general' && p.cites.length === 0;
                               return (
                                 <p
                                   className={`${s.para} ${isPlaceholder ? s.placeholder : ''}`}
@@ -756,6 +760,11 @@ export default function Compose() {
                                       [{c}]
                                     </span>
                                   ))}
+                                  {isGeneral && !isPlaceholder && (
+                                    <span className={s.generalNote} title="语料未覆盖，通识撰写，请核对事实">
+                                      通识
+                                    </span>
+                                  )}
                                 </p>
                               );
                             })}
@@ -824,14 +833,21 @@ export default function Compose() {
                           事实依据 · {current.citations.cited.length} 条素材被引用
                         </summary>
                         <div className={s.dBody}>
+                          {current.citations.mode === 'general' && (
+                            <p className={s.findingItem}>
+                              语料库未覆盖该选题，正文为通识撰写、无素材出处。
+                              请核对人名、日期、数字等事实后再发布，不要直接当作已核实内容。
+                            </p>
+                          )}
                           {current.citations.invalidCites.length > 0 && (
                             <p className={s.findingItem}>
                               无效引用：{current.citations.invalidCites.join('、')}
                             </p>
                           )}
-                          {current.citations.cited.length === 0 && (
-                            <p className={s.empty}>没有段落引用到素材，请检查选题或更换表述。</p>
-                          )}
+                          {current.citations.cited.length === 0 &&
+                            current.citations.mode !== 'general' && (
+                              <p className={s.empty}>没有段落引用到素材，请检查选题或更换表述。</p>
+                            )}
                           {current.citations.cited.map((src) => (
                             <p className={s.sourceItem} key={src.ref}>
                               <span className={s.sourceRef}>[{src.ref}]</span>

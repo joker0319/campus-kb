@@ -1,5 +1,11 @@
 import { useEffect, useRef, useState } from 'react';
-import { streamAgent, type AgentResult, type AgentStep, type ChatTurn } from '../lib/api';
+import {
+  clearAgentMemory,
+  streamAgent,
+  type AgentResult,
+  type AgentStep,
+  type ChatTurn,
+} from '../lib/api';
 import { SoftBackdrop } from '../components/SoftBackdrop';
 import s from '../styles/assistant.module.css';
 
@@ -18,8 +24,41 @@ type Turn = {
 const TOOL_LABEL: Record<string, string> = {
   search_rules: '查规范',
   search_archive: '查档案',
+  compare_rule_versions: '比版本',
+  archive_timeline: '排时间线',
   review_draft: '校稿件',
 };
+
+const SESSION_KEY = 'campus-agent-session';
+const TURNS_KEY = 'campus-agent-turns';
+const newSessionId = () =>
+  `s-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 10)}`;
+
+/** 会话 ID 与已完成的回合存本地：刷新后 UI 能续上，服务端记忆随后端继续生效。 */
+function restoreSession(): string {
+  try {
+    const saved = localStorage.getItem(SESSION_KEY);
+    if (saved && /^[A-Za-z0-9_-]{1,64}$/.test(saved)) return saved;
+    const fresh = newSessionId();
+    localStorage.setItem(SESSION_KEY, fresh);
+    return fresh;
+  } catch {
+    return newSessionId();
+  }
+}
+
+function restoreTurns(): readonly Turn[] {
+  try {
+    const raw = localStorage.getItem(TURNS_KEY);
+    if (!raw) return [];
+    const parsed: unknown = JSON.parse(raw);
+    return Array.isArray(parsed)
+      ? (parsed.filter((t) => t && !t.pending && (t.result || t.error)) as Turn[])
+      : [];
+  } catch {
+    return [];
+  }
+}
 
 /** 从工具轨迹里挑出给用户看的依据条目（文件名/规则号/命中行）。 */
 function cleanAnswer(text: string): string {
@@ -46,6 +85,19 @@ function stepItems(step: AgentResult['steps'][number]): readonly string[] {
     return items.slice(0, 4).map((x) => {
       const r = x as { ruleId?: string; line?: number; message?: string };
       return `[${r.ruleId ?? ''}] 第 ${r.line ?? ''} 行 · ${r.message ?? ''}`;
+    });
+  }
+  if (step.result.kind === 'versionDiff') {
+    const changes = step.result.changes ?? [];
+    return changes.slice(0, 4).map((x) => {
+      const c = x as { topic?: string; current?: string; old?: readonly string[] };
+      return `${c.topic ?? ''}：现行「${c.current ?? ''}」，旧版「${(c.old ?? []).join('、')}」`;
+    });
+  }
+  if (step.result.kind === 'timeline') {
+    return items.slice(0, 6).map((x) => {
+      const r = x as { date?: string; file?: string; line?: number; excerpt?: string };
+      return `${r.date || '无日期'} · ${r.file ?? ''} 第 ${r.line ?? ''} 行：${r.excerpt ?? ''}`;
     });
   }
   return [];
@@ -95,22 +147,53 @@ function StepsView({ steps }: { steps: readonly AgentStep[] }) {
 /** 内容助手（Agent）：一句话进去，模型检索知识库自选工具，产出有出处的回答，辅助写公众号文章。 */
 export default function Assistant() {
   const [draft, setDraft] = useState('');
-  const [turns, setTurns] = useState<readonly Turn[]>([]);
-  const seq = useRef(0);
-  const bottom = useRef<HTMLDivElement | null>(null);
+  const [sessionId, setSessionId] = useState<string>(restoreSession);
+  const [turns, setTurns] = useState<readonly Turn[]>(restoreTurns);
+  const seq = useRef(-1);
+  if (seq.current === -1) seq.current = turns.reduce((max, t) => Math.max(max, t.id), 0);
+
+  // 已完成的回合落本地，刷新后接着读；正在流式的回合不存，避免半句残留
+  useEffect(() => {
+    try {
+      localStorage.setItem(TURNS_KEY, JSON.stringify(turns.filter((t) => !t.pending)));
+    } catch {
+      // 隐私模式下 localStorage 不可写，对话仍可正常使用
+    }
+  }, [turns]);
+
+  // 只在「发出新回合」时滚到该回合顶部，让对话从上往下读；
+  // 流式 delta 不再强制置底，否则用户得从底部往上滑才能看到自己发的那条。
+  const [scrollToId, setScrollToId] = useState<number | null>(null);
 
   useEffect(() => {
-    bottom.current?.scrollIntoView({ block: 'end' });
-  }, [turns]);
+    if (scrollToId === null) return;
+    document.getElementById(`turn-${scrollToId}`)?.scrollIntoView({ block: 'start' });
+  }, [scrollToId]);
 
   const patch = (id: number, next: Partial<Turn>) =>
     setTurns((prev) => prev.map((t) => (t.id === id ? { ...t, ...next } : t)));
+
+  /** 新对话：换会话 ID，本地与服务端记忆一起清掉。 */
+  const startNew = async () => {
+    const previous = sessionId;
+    const fresh = newSessionId();
+    setSessionId(fresh);
+    setTurns([]);
+    try {
+      localStorage.setItem(SESSION_KEY, fresh);
+      localStorage.removeItem(TURNS_KEY);
+      await clearAgentMemory(previous);
+    } catch {
+      // 后端清理失败只影响旧会话残留，本地新会话已可用
+    }
+  };
 
   const send = async () => {
     const query = draft.trim();
     if (!query || turns.some((t) => t.pending)) return;
     const id = ++seq.current;
     setTurns((prev) => [...prev, { id, query, pending: true }]);
+    setScrollToId(id);
     setDraft('');
 
     // 把本轮之前的对话带进上下文；只取 user/assistant 文本，工具轨迹不入库
@@ -124,19 +207,26 @@ export default function Assistant() {
     );
 
     try {
-      const result = await streamAgent(query, history, {
-        onMeta: (model) => patch(id, { model }),
-        onStep: (step) =>
-          setTurns((prev) =>
-            prev.map((t) =>
-              t.id === id ? { ...t, streamSteps: [...(t.streamSteps ?? []), step] } : t,
+      const result = await streamAgent(
+        query,
+        history,
+        {
+          onMeta: (model) => patch(id, { model }),
+          onStep: (step) =>
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === id ? { ...t, streamSteps: [...(t.streamSteps ?? []), step] } : t,
+              ),
             ),
-          ),
-        onDelta: (text) =>
-          setTurns((prev) =>
-            prev.map((t) => (t.id === id ? { ...t, streamText: (t.streamText ?? '') + text } : t)),
-          ),
-      });
+          onDelta: (text) =>
+            setTurns((prev) =>
+              prev.map((t) =>
+                t.id === id ? { ...t, streamText: (t.streamText ?? '') + text } : t,
+              ),
+            ),
+        },
+        sessionId,
+      );
       patch(id, {
         result,
         pending: false,
@@ -162,6 +252,15 @@ export default function Assistant() {
         </a>
         <span className={s.barName}>内容助手</span>
         <span className={s.barTag}>Agent · 检索知识库，辅助写公众号文章</span>
+        <button
+          type="button"
+          className={s.newChat}
+          onClick={() => void startNew()}
+          disabled={turns.length === 0 || turns.some((t) => t.pending)}
+          title="清空当前对话，开启新会话"
+        >
+          新对话
+        </button>
       </header>
 
       <div className={s.body}>
@@ -207,7 +306,7 @@ export default function Assistant() {
 
           <div className={s.threadList} aria-live="polite">
             {turns.map((t) => (
-              <div className={s.turn} key={t.id}>
+              <div className={s.turn} id={`turn-${t.id}`} key={t.id}>
                 <div className={s.userMsg}>{t.query}</div>
                 {t.pending ? (
                   <div className={s.botMsg}>
@@ -251,7 +350,6 @@ export default function Assistant() {
                 ) : null}
               </div>
             ))}
-            <div ref={bottom} />
           </div>
         </div>
       </div>
@@ -277,7 +375,7 @@ export default function Assistant() {
             发送
           </button>
         </div>
-        <p className={s.hint}>Agent 自动检索知识库 · 回答给出处，不臆测</p>
+        <p className={s.hint}>Agent 自动检索知识库 · 回答给出处，不臆测 · 对话自动保存，刷新可续聊</p>
       </div>
     </div>
   );

@@ -4,10 +4,12 @@
   这里模型自己决定调用哪个工具、传什么参数；工具在本机执行（规则/档案/校验），
   结果作为 tool 消息回灌，模型基于真实结果组织回答。模型不产出校验结论。
 
-工具全部是确定性函数：
-  - search_rules    规则库关键词检索
-  - search_archive  档案库全文检索
-  - review_draft    调用 checker.py 规则引擎校验（结论以此为准）
+工具全部是确定性只读函数：
+  - search_rules            规则库关键词检索
+  - search_archive          档案库全文检索
+  - compare_rule_versions   规范版本对比（现行口径 vs 已废止旧版）
+  - archive_timeline        跨档案时间线（按文件名日期排序）
+  - review_draft            调用 checker.py 规则引擎校验（生成后的质量关卡，结论以此为准）
 
 循环上限 MAX_STEPS，防止模型反复调用不收敛。
 配置与密钥复用 deepseek.Settings（DEEPSEEK_API_KEY）。
@@ -16,6 +18,7 @@
 from __future__ import annotations
 
 import json
+import re
 from typing import Any, AsyncIterator, Callable
 
 import httpx
@@ -34,6 +37,8 @@ SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的内容�
 - 涉及「某条规范/标点/校名/写法是否正确」→ 必须调用 search_rules，不要凭记忆回答。
 - 涉及「档案里记载了什么/某活动或人物的历史资料」→ 必须调用 search_archive。
 - 涉及「帮我检查这段稿件/这段正文有没有问题」→ 必须调用 review_draft；校验结论只能复述工具返回的命中，不得自行增减或改写严重程度。
+- 涉及「规范是哪个版本/旧版和现在有什么区别/某口径是否变了」→ 必须调用 compare_rule_versions，以权威口径文件中的现行版本与废止值为准。
+- 涉及「某件事的时间线/历年变化/按时间排列相关档案」→ 必须调用 archive_timeline，用工具给出的文件日期排序，不要自行推测年份。
 - 只有工具结果里有的事实才能说；工具没查到就明确说知识库中没有依据，不要编造。
 - 一次可以调用多个工具；信息足够后直接用中文回答，不要重复调用。
 - 回答简洁，引用档案时带上工具结果里的文件名与行号。
@@ -78,6 +83,42 @@ TOOLS: list[dict[str, Any]] = [
                     "query": {"type": "string", "description": "检索词或自然语言提问，如「奠基」「学生心理咨询在哪里预约」"},
                 },
                 "required": ["query"],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "compare_rule_versions",
+            "description": (
+                "对比写作规范的现行版本与旧版/废止口径。当用户问「规范哪个版本有效」"
+                "「旧版和现在有什么区别」「某排名/数值/写法以前是不是不一样」时调用。"
+                "topic 可留空表示全部口径；结论以权威口径文件为准，不要用记忆里的旧值。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "对比主题，如「排名」「QS」「标点」；留空返回全部"},
+                },
+                "required": [],
+            },
+        },
+    },
+    {
+        "type": "function",
+        "function": {
+            "name": "archive_timeline",
+            "description": (
+                "按主题检索档案，把命中的记录按文件名日期排成时间线。"
+                "当用户问「这件事的发展过程」「某活动历年的记录」「按时间列出相关档案」时调用。"
+                "结果带日期、文件名与摘录，引用时请带上出处。"
+            ),
+            "parameters": {
+                "type": "object",
+                "properties": {
+                    "topic": {"type": "string", "description": "检索主题，如「开学典礼」「科研合作」"},
+                },
+                "required": ["topic"],
             },
         },
     },
@@ -224,6 +265,168 @@ def _exec_search_archive(args: dict[str, Any]) -> ToolResult:
     }
 
 
+_VERSION_IN_SOURCE = re.compile(r"(?<!\d)(20\d{6}|\d{6})(?!\d)")
+# 语料文件名里的两种日期：_20261104_WX / _130421_DOCUMENT（后一种按 DDMMYY）
+_DATE8 = re.compile(r"_(\d{4})(\d{2})(\d{2})_[A-Z]+(?:\.txt)?$")
+_DATE6 = re.compile(r"_(\d{2})(\d{2})(\d{2})_[A-Z]+(?:\.txt)?$")
+
+
+def _file_date(name: str) -> str:
+    """从语料文件名解析 ISO 日期；识别不了返回空串，交给调用方单列。"""
+    m = _DATE8.search(name)
+    if m:
+        year, month, day = m.groups()
+        return f"{year}-{month}-{day}" if 1 <= int(month) <= 12 and 1 <= int(day) <= 31 else ""
+    m = _DATE6.search(name)
+    if m:
+        day, month, year = m.groups()
+        return f"20{year}-{month}-{day}" if 1 <= int(month) <= 12 and 1 <= int(day) <= 31 else ""
+    return ""
+
+
+def _exec_compare_rule_versions(args: dict[str, Any], rules: list[dict]) -> ToolResult:
+    """现行规范版本 + 权威口径 vs 已废止旧版；只读，结论来自 authority.json。"""
+    topic = str(args.get("topic", "")).strip()
+    authority = checker.load_authority() or {}
+    manual = authority.get("manual", {})
+    canonical = str(manual.get("canonical_version", ""))
+    superseded = [str(x) for x in manual.get("superseded", [])]
+    ignored = [str(x) for x in manual.get("ignored_copies", [])]
+    version_rule = str(manual.get("rule", ""))
+
+    # 规则文件来源版本分布：让模型能回答「现行规则来自哪一版手册」
+    by_version: dict[str, list[str]] = {}
+    for rule in rules:
+        match = _VERSION_IN_SOURCE.search(str(rule.get("source", "")))
+        if match:
+            by_version.setdefault(match.group(1), []).append(str(rule.get("id", "")))
+
+    changes: list[dict[str, Any]] = []
+    for key, fact in (authority.get("facts") or {}).items():
+        hay = " ".join(
+            str(x) for x in (
+                key, fact.get("label", ""), fact.get("note", ""),
+                fact.get("canonical_text", ""), fact.get("value", ""),
+                " ".join(str(v) for v in fact.get("rejected_values", [])),
+            )
+        )
+        if topic:
+            terms = deepseek._terms(topic)
+            if topic not in hay and not (terms and deepseek._score(hay, terms) > 0):
+                continue
+        changes.append({
+            "topic": fact.get("label", key),
+            "current": fact.get("canonical_text", fact.get("value", "")),
+            "old": list(fact.get("rejected_values", [])),
+            "note": str(fact.get("note", "")),
+            "evidence": [str(x) for x in fact.get("evidence", [])],
+        })
+
+    lines: list[str] = []
+    if canonical:
+        lines.append(f"现行规范版本：{canonical}")
+    if superseded:
+        lines.append(f"已废止版本：{'、'.join(superseded)}")
+    if ignored:
+        lines.append(f"不作为依据的副本：{'、'.join(ignored)}")
+    if version_rule:
+        lines.append(f"裁决规则：{version_rule}")
+    if by_version:
+        dist = "；".join(
+            f"{v}（{len(ids)} 条规则）"
+            for v, ids in sorted(by_version.items(), key=lambda kv: kv[0], reverse=True)
+        )
+        lines.append(f"规则文件来源版本：{dist}")
+    if changes:
+        lines.append("口径对比：")
+        for change in changes:
+            old = "、".join(str(v) for v in change["old"]) if change["old"] else "无记录"
+            row = f"- {change['topic']}：现行「{change['current']}」，旧版「{old}」已废止。"
+            if change["note"]:
+                row += f" 说明：{change['note']}"
+            lines.append(row)
+    elif topic:
+        lines.append(f"权威口径文件中未记录与「{topic}」相关的版本变更。")
+
+    header = f"规范版本对比（主题：{topic}）" if topic else "规范版本对比（全部）"
+    return {
+        "text": header + "：\n" + "\n".join(lines),
+        "structured": {
+            "kind": "versionDiff", "topic": topic, "canonical": canonical,
+            "superseded": superseded, "ignoredCopies": ignored, "rule": version_rule,
+            "ruleVersions": by_version, "changes": changes,
+        },
+    }
+
+
+def _exec_archive_timeline(args: dict[str, Any]) -> ToolResult:
+    """跨档案时间线：命中记录按文件名日期升序，无日期单列，不编造年份。"""
+    topic = str(args.get("topic", "")).strip()
+    if not topic:
+        return {
+            "text": "主题为空，无法生成时间线。",
+            "structured": {"kind": "timeline", "items": [], "undated": [], "topic": topic},
+        }
+
+    try:
+        result = corpus_search.search(topic, limit=24)
+    except OSError:
+        result = {"total": 0, "scanned": 0, "results": []}
+    rows = result.get("results", [])
+    # 与 search_archive 一致：多词 AND 空手时退化成单关键词，避免误判「没有记载」
+    retried_with = ""
+    if not rows:
+        for term in sorted({t for t in topic.split() if len(t) >= 2}, key=len, reverse=True)[:3]:
+            alt = corpus_search.search(term, limit=24)
+            if alt.get("results"):
+                result, rows, retried_with = alt, alt.get("results", []), term
+                break
+
+    if not rows:
+        return {
+            "text": f"档案库中未检索到与「{topic}」相关的记录（扫描 {result.get('scanned', 0)} 份）。",
+            "structured": {
+                "kind": "timeline", "items": [], "undated": [], "topic": topic,
+                "scanned": result.get("scanned", 0),
+            },
+        }
+
+    # 每份档案只取最早命中的一行：同一篇推文占满时间线会掩盖跨档案的演变
+    dated: list[dict[str, Any]] = []
+    undated: list[dict[str, Any]] = []
+    seen_files: set[str] = set()
+    for row in sorted(rows, key=lambda r: (str(r["file"]), int(r["line"]))):
+        if row["file"] in seen_files:
+            continue
+        seen_files.add(row["file"])
+        item = {
+            "date": _file_date(str(row["file"])),
+            "file": row["file"], "line": row["line"], "excerpt": row["excerpt"],
+        }
+        (dated if item["date"] else undated).append(item)
+    dated.sort(key=lambda item: item["date"])
+
+    lines = [f"「{topic}」相关档案时间线（命中 {len(rows)} 处，扫描 {result.get('scanned', 0)} 份）："]
+    for item in dated:
+        lines.append(f"- {item['date']} · {item['file']} 第 {item['line']} 行：{item['excerpt']}")
+    if undated:
+        lines.append("- 以下档案文件名无日期，无法排序：")
+        for item in undated[:6]:
+            lines.append(f"  · {item['file']} 第 {item['line']} 行：{item['excerpt']}")
+    header = ""
+    if retried_with:
+        header = f"「{topic}」要求多个词同行，命中太少，已改用「{retried_with}」检索。"
+
+    return {
+        "text": header + "\n".join(lines),
+        "structured": {
+            "kind": "timeline", "topic": topic, "items": dated,
+            "undated": undated, "total": len(rows),
+            "scanned": result.get("scanned", 0), "retriedWith": retried_with,
+        },
+    }
+
+
 def _exec_review_draft(args: dict[str, Any], rules: list[dict]) -> ToolResult:
     content = str(args.get("content", "")).strip()
     if not content:
@@ -276,6 +479,10 @@ def make_executor(rules: list[dict]) -> Callable[[str, dict[str, Any]], ToolResu
             return _exec_search_rules(args, rules)
         if name == "search_archive":
             return _exec_search_archive(args)
+        if name == "compare_rule_versions":
+            return _exec_compare_rule_versions(args, rules)
+        if name == "archive_timeline":
+            return _exec_archive_timeline(args)
         if name == "review_draft":
             return _exec_review_draft(args, rules)
         return {"text": f"未知工具：{name}", "structured": {"kind": "error", "name": name}}

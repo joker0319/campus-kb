@@ -152,6 +152,7 @@ export interface AgentStep {
   readonly result: {
     readonly kind: string;
     readonly items?: readonly Record<string, unknown>[];
+    readonly changes?: readonly Record<string, unknown>[];
     readonly total?: number;
     readonly counts?: { total: number; error: number; warn: number; info: number };
     readonly keyword?: string;
@@ -205,17 +206,26 @@ type AgentStreamEvent = {
   message?: string;
 };
 
+/** 清空服务端对话记忆；前端「新对话」时调用，失败不影响本地开启新会话。 */
+export async function clearAgentMemory(sessionId: string): Promise<void> {
+  const r = await fetch(`/api/agent/memory/${encodeURIComponent(sessionId)}`, {
+    method: 'DELETE',
+  });
+  if (!r.ok) throw new Error(`清空会话记忆失败：${r.status}`);
+}
+
 /** 助手流式问答：工具轨迹与回答边到边显示，结束时返回完整结果（同 postAgent）。 */
 export async function streamAgent(
   message: string,
   history: readonly ChatTurn[] = [],
   handlers: AgentStreamHandlers = {},
+  sessionId?: string,
   signal?: AbortSignal,
 ): Promise<AgentResult> {
   const r = await fetch('/api/agent/stream', {
     method: 'POST',
     headers: { 'Content-Type': 'application/json', Accept: 'text/event-stream' },
-    body: JSON.stringify({ message, history }),
+    body: JSON.stringify({ message, history, sessionId: sessionId || undefined }),
     signal,
   });
   if (!r.ok) {
@@ -341,6 +351,9 @@ export interface ComposeResult {
     readonly invalidCites: readonly string[];
     readonly paragraphCount: number;
     readonly grounded: boolean;
+    /** grounded=语料严格接地；general=语料未覆盖，通识撰写需核对 */
+    readonly mode?: 'grounded' | 'general';
+    readonly generalParagraphs?: number;
   };
   readonly review: {
     readonly counts: {
@@ -664,4 +677,60 @@ export async function searchArchive(
   const r = await fetch(`/api/search?${params.toString()}`, { signal });
   if (!r.ok) throw new Error(`检索接口返回 ${r.status}`);
   return (await r.json()) as ArchiveResult;
+}
+
+/** 往期公众号推文档案（见 campus-kb/api/archive.py） */
+export interface WechatArticle {
+  readonly title: string;
+  readonly url: string;
+  readonly published: string;
+  readonly month: string;
+  readonly file: string;
+  readonly excerpt: string;
+  readonly chars: number;
+  readonly images: number;
+}
+
+export interface WechatMonth {
+  readonly month: string;
+  readonly count: number;
+}
+
+export interface WechatArchive {
+  readonly total: number;
+  readonly months: readonly WechatMonth[];
+  readonly articles: readonly WechatArticle[];
+  readonly query: string;
+  readonly month: string;
+}
+
+export interface WechatArticleDetail {
+  readonly title: string;
+  readonly published: string;
+  readonly url: string;
+  readonly file: string;
+  readonly text: string;
+  readonly truncated: boolean;
+}
+
+/** 按发布日期倒序的往期推文，支持关键词与月份筛选。 */
+export async function getArchive(query = '', month = ''): Promise<WechatArchive> {
+  const params = new URLSearchParams();
+  if (query) params.set('q', query);
+  if (month) params.set('month', month);
+  const qs = params.toString();
+  const r = await fetch(`/api/archive${qs ? `?${qs}` : ''}`);
+  if (!r.ok) throw new Error(`档案接口返回 ${r.status}`);
+  return (await r.json()) as WechatArchive;
+}
+
+/** 单篇入库正文，用于页面内预览；原文链接走文章自身的 url。 */
+export async function getArchiveArticle(file: string): Promise<WechatArticleDetail> {
+  const params = new URLSearchParams({ file });
+  const r = await fetch(`/api/archive/article?${params.toString()}`);
+  if (!r.ok) {
+    const detail = (await r.json().catch(() => null)) as { detail?: string } | null;
+    throw new Error(detail?.detail || `正文接口返回 ${r.status}`);
+  }
+  return (await r.json()) as WechatArticleDetail;
 }

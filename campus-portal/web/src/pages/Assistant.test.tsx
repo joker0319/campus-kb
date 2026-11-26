@@ -68,6 +68,8 @@ function controlledStream() {
 describe('助手页 Agent 模式', () => {
   beforeEach(() => {
     window.location.hash = '#/assistant';
+    // 会话与回合会落 localStorage，每个用例必须从空对话开始
+    localStorage.clear();
     vi.stubGlobal(
       'fetch',
       vi.fn((input: RequestInfo | URL) => {
@@ -80,6 +82,9 @@ describe('助手页 Agent 模式', () => {
               headers: { 'Content-Type': 'text/event-stream' },
             }),
           );
+        }
+        if (url.includes('/api/agent/memory/')) {
+          return Promise.resolve(new Response('{"ok":true}', { status: 200 }));
         }
         throw new Error(`unexpected url ${url}`);
       }),
@@ -128,10 +133,14 @@ describe('助手页 Agent 模式', () => {
       return url.includes('/api/agent/stream');
     });
     expect(agentCall).toBeTruthy();
-    expect(JSON.parse((agentCall![1] as RequestInit).body as string)).toEqual({
-      message: '奠基仪式是什么时候？',
-      history: [],
-    });
+    const body = JSON.parse((agentCall![1] as RequestInit).body as string) as {
+      message: string;
+      history: readonly unknown[];
+      sessionId: string;
+    };
+    expect(body.message).toBe('奠基仪式是什么时候？');
+    expect(body.history).toEqual([]);
+    expect(body.sessionId).toMatch(/^s-[a-z0-9]+-[a-z0-9]+$/);
   });
 
   it('流式作答：轨迹先到，回答按增量逐字出现', async () => {
@@ -198,6 +207,24 @@ describe('助手页 Agent 模式', () => {
     });
   });
 
+  it('发出后滚到新回合顶部，而不是把视口拽到底部', async () => {
+    const scrollSpy = vi.mocked(Element.prototype.scrollIntoView);
+    scrollSpy.mockClear();
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy(),
+    );
+
+    await user.type(screen.getByLabelText('助手输入框'), '奠基仪式是什么时候？');
+    await user.click(screen.getByRole('button', { name: '发送' }));
+
+    await waitFor(() => expect(scrollSpy).toHaveBeenCalled());
+    // 必须从「用户消息所在的新回合」顶部开始往下读，不允许 block:'end' 置底
+    expect(scrollSpy).toHaveBeenCalledWith({ block: 'start' });
+    expect(scrollSpy).not.toHaveBeenCalledWith({ block: 'end' });
+  });
+
   it('示例提问点击后填入输入框', async () => {
     const user = userEvent.setup();
     render(<App />);
@@ -238,5 +265,46 @@ describe('助手页 Agent 模式', () => {
     await waitFor(() => {
       expect(screen.getByText(/查询失败：未配置 DEEPSEEK_API_KEY/)).toBeTruthy();
     });
+  });
+
+  it('刷新后从本地记忆恢复上一轮对话', async () => {
+    localStorage.setItem('campus-agent-session', 's-restored-1');
+    localStorage.setItem(
+      'campus-agent-turns',
+      JSON.stringify([{ id: 1, query: '奠基仪式是什么时候？', result: AGENT_ANSWER }]),
+    );
+
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(AGENT_ANSWER.answer)).toBeTruthy());
+    expect(screen.queryByRole('heading', { name: '今天写点什么？' })).toBeNull();
+    expect(screen.getByText('奠基仪式是什么时候？')).toBeTruthy();
+  });
+
+  it('新对话清空本地回合并清理服务端会话', async () => {
+    localStorage.setItem(
+      'campus-agent-turns',
+      JSON.stringify([{ id: 1, query: '旧问题', result: AGENT_ANSWER }]),
+    );
+    const user = userEvent.setup();
+    render(<App />);
+    await waitFor(() => expect(screen.getByText(AGENT_ANSWER.answer)).toBeTruthy());
+
+    const button = screen.getByRole('button', { name: '新对话' }) as HTMLButtonElement;
+    expect(button.disabled).toBe(false);
+    await user.click(button);
+
+    await waitFor(() =>
+      expect(screen.getByRole('heading', { name: '今天写点什么？' })).toBeTruthy(),
+    );
+    // 清空后 effect 会重写空数组，关键是本地不再残留任何回合
+    expect(JSON.parse(localStorage.getItem('campus-agent-turns') ?? '[]')).toEqual([]);
+    const deleted = vi
+      .mocked(fetch)
+      .mock.calls.some(
+        ([url, init]) =>
+          String(url).includes('/api/agent/memory/') &&
+          (init as RequestInit | undefined)?.method === 'DELETE',
+      );
+    expect(deleted).toBe(true);
   });
 });

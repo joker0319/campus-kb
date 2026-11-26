@@ -30,14 +30,26 @@ MAX_CONTEXT_BLOCKS = 24   # 交给模型的素材块上限（控制 token）
 MAX_PER_QUERY = 6         # 每个检索词取多少行
 CITES_LIMIT = 40          # 单段引用文本截断长度
 
+# 成稿模式：素材充足时严格接地；素材不足时用通识兜底，且明确标注为「通识撰写」。
+# 两种模式都禁止编造本校具体人名 / 日期 / 数字 / 奖项等硬事实，区别只在
+# 「无据段落能不能写成正文」——严格模式留占位待用户补素材，兜底模式写成
+# 通用内容并让前端标记「通识」。这样语料没覆盖的选题（如元旦跨年活动）
+# 也能出一篇可用稿，同时不冒充有据。
+MODE_GROUNDED = "grounded"
+MODE_GENERAL = "general"
+MIN_GROUNDED_BLOCKS = 2   # 命中少于此数视为素材不足，转通识兜底
+
 COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的公众号编辑。
-你的任务：仅依据下面【素材库】里编号的内容，写一篇可直接使用的微信公众号文章草稿。
+你的任务：依据下面【素材库】与通用写作知识，写一篇可直接使用的微信公众号文章草稿。
 
 硬性要求：
-1. 只能用【素材库】中的事实。每个正文段落末尾必须标注它依据的素材编号，如 [A1][A3]。
-2. 素材库里没有的事实、数字、人名、日期一律不许写；宁可少写，不要编造或用常识补全。
-3. 如果素材不足以支撑某个部分，在该部分写「（素材不足，待补充）」，不要虚构。
-4. 严禁把截断片段当正文：不要输出「…」「……」或「素材原文截断」「待补充」等编辑批注。
+1. 【素材库】中的事实优先使用：用到某条素材的段落末尾标它的编号，如 [A1][A3]，并把编号填进该段 cites。
+2. 素材未覆盖的部分允许基于通识写成完整正文（cites 留空），但严禁编造本校具体人名、职务、
+   精确日期、时刻、地点、主办单位、活动主题名称、参与人数、名次、奖项名称等硬事实；
+   这些只能来自素材或【口径约束】。通识段落请用泛化表述（如「岁末时分」「不少同学会」「通常会有」），
+   不要写成「某年某月某日某部门主办某活动」这种看似确凿的纪实句。
+3. 通识段落要写得像正常正文，不要输出「（素材不足，待补充）」这类占位符，也不要留「待补充」字样。
+4. 严禁把截断片段当正文：不要输出「…」「……」或「素材原文截断」等编辑批注。
    某句话在素材里不完整就整句不用，宁可少写一段，也不要照抄半句或补出解释。
 5. 语言符合公众号文风：标题抓人但不夸张，导语短，正文分小标题，段落简洁。
 6. 遵守给出的【写作规范】：标题与正文中校名首次出现写全称「香港城市大学（东莞）」，不要用「港城大」这类简称；
@@ -56,15 +68,16 @@ COMPOSE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处�
   ],
   "imageSuggestions": [{"after": "小标题或段落序号", "description": "建议配图内容"}]
 }
-8. cites 数组里只能填【素材库】中真实存在的编号；没有依据的段落 cites 留空并把 text 写为「（素材不足，待补充）」。
+8. cites 数组里只能填【素材库】中真实存在的编号；通识段落 cites 留空、text 写完整正文，由前端标记「通识」。
 """
 
 REVISE_SYSTEM_PROMPT = """你是香港城市大学（东莞）媒体传讯处的公众号编辑，正在修改一篇已成型草稿。
 任务：只按【修改指令】调整【当前草稿】，其余内容原样保留。
 
 硬性要求：
-1. 素材编号 A# 与当前草稿一致，cites 只能引用【素材库】里真实存在的编号，不许编新编号。
-2. 不许引入素材库之外的事实、数字、人名、日期；原稿没有的事实依然不许补。
+1. 素材编号 A# 与当前草稿一致，cites 只能引用【素材库】里真实存在的编号，不许编新编号；通识段落 cites 保持留空。
+2. 不许引入素材库之外的本校具体人名、职务、精确日期、数字、名次、奖项名称；原稿没有的硬事实依然不许补。
+   指令要求补充内容而素材未覆盖时，可写通识性正文（cites 留空），不要因此留空或写「待补充」。
 3. 指令没提到的标题、小标题、段落、配图建议逐字保留，不要顺手润色或重排结构。
 4. 不许输出「…」「……」或「素材原文截断」「待补充」等编辑批注；不完整的句子直接删掉。
 5. 按指令需要拆并段落时，cites 跟随内容迁移，不要丢失出处。
@@ -194,6 +207,8 @@ def build_context(blocks: list[dict], rule_items: list[dict]) -> str:
         lines.append(f"- [{b['ref']}] {b['text']}（来源：{b['file']} 第 {b['line']} 行）")
     if not blocks:
         lines.append("- （素材库为空：知识库中未检索到与该选题相关的记录）")
+        lines.append("  【通识成稿】本选题语料未覆盖，请基于通识写完整文章（cites 全部留空）；")
+        lines.append("  严禁编造本校具体人名、职务、日期、数字、名次、奖项，这些字段无素材时不要出现。")
     lines.append("\n【写作规范】（写稿时遵守）")
     for r in rule_items:
         lines.append(f"- [{r['ref']}] {r['id']}：{r['text']}")
@@ -289,8 +304,15 @@ def parse_article(raw: str) -> dict:
     }
 
 
-def check_citations(article: dict, blocks: list[dict]) -> dict:
-    """后端核对引用：无效编号 / 无出处段落都要暴露给用户，不冒充有据。"""
+def check_citations(
+    article: dict, blocks: list[dict], mode: str = MODE_GROUNDED
+) -> dict:
+    """后端核对引用：无效编号 / 无出处段落都要暴露给用户，不冒充有据。
+
+    mode 只是检索阶段的预判；最终以成稿实际引用为准——只要出现无引用段落就判为
+    general（通识撰写），哪怕检索命中过素材。这样弱相关素材不会把编造内容洗成「有据」。
+    grounded 字段语义不变：仍表示「每段都有据」。
+    """
     valid = {b["ref"] for b in blocks}
     cited_counts: dict[str, int] = {}
     uncited = 0
@@ -311,12 +333,18 @@ def check_citations(article: dict, blocks: list[dict]) -> dict:
                 elif c not in invalid:
                     invalid.append(c)
     used = [b for b in blocks if b["ref"] in cited_counts]
+    # 通识段落 = 无引用的非占位段落。无论检索预判是什么，只要有就按通识展示。
+    general = uncited
+    final_mode = MODE_GENERAL if general else MODE_GROUNDED
     return {
         "cited": used,
         "uncitedParagraphs": uncited,
         "invalidCites": invalid,
         "paragraphCount": total,
         "grounded": total > 0 and uncited == 0 and not invalid,
+        "mode": final_mode,
+        "generalParagraphs": general,
+        "retrievalMode": mode,
     }
 
 
@@ -499,7 +527,14 @@ def _prepare(
 
     spec = styles.resolve_style(style, topic)
     blocks, rule_items, meta = gather_material(topic, rules)
+    # 素材命中太少时走「通识兜底」：仍能出完整文章，但无据段落要被前端标出来。
+    # 只用命中数量判模式不可靠：噪音词也能召回一堆弱相关块（如「元旦」命中有「活动」的旧文）。
+    # 真正决定是否冒充有据的是成稿后「每段有无引用」，故模式在 _assemble 里按引用结果最终判定；
+    # 这里只先记命中数，供 SSE meta 事件展示检索规模。
+    mode = MODE_GROUNDED if len(blocks) >= MIN_GROUNDED_BLOCKS else MODE_GENERAL
     meta["style"] = spec["id"]
+    meta["mode"] = mode
+    meta["sourceCount"] = len(blocks)
     context = build_context(blocks, rule_items)
     return {
         "cfg": cfg,
@@ -507,6 +542,7 @@ def _prepare(
         "blocks": blocks,
         "rule_items": rule_items,
         "meta": meta,
+        "mode": mode,
         "user_prompt": f"请围绕选题写公众号文章草稿。\n选题：{topic}\n\n{context}",
         "system_prompt": f"{COMPOSE_SYSTEM_PROMPT}\n\n{_title_hints(rules)}{styles.style_block(spec)}",
     }
@@ -520,9 +556,14 @@ def _assemble(
     style: str,
 ) -> dict:
     """模型写完之后的所有确定性收尾：引用核对、发前检查、配图、导出格式。"""
-    cites = check_citations(article, ctx["blocks"])
+    cites = check_citations(article, ctx["blocks"], ctx.get("mode", MODE_GROUNDED))
     review = review_article(article, rules)
     figs = attach_figures(article)
+    # meta.mode 反映的是检索预判；citations.mode 才是最终口径，二者可能不同
+    # （命中弱相关素材时预判 grounded、成稿后出现通识段 → 最终 general）。
+    final_meta = dict(ctx["meta"])
+    final_meta["mode"] = cites["mode"]
+    final_meta["retrievalMode"] = ctx.get("mode", MODE_GROUNDED)
     return {
         "topic": topic,
         "article": article,
@@ -530,7 +571,7 @@ def _assemble(
         "html": export_html.article_to_html(article, figs),
         "sources": ctx["blocks"],
         "rules": ctx["rule_items"],
-        "meta": ctx["meta"],
+        "meta": final_meta,
         "citations": cites,
         "review": review,
         "style": styles.style_meta(ctx["spec"], style),
@@ -565,7 +606,11 @@ async def compose_article_stream(
     检索与提示准备发生在第一个事件之前，所以首帧前会有一两秒静默。
     """
     ctx = _prepare(topic, rules, style, settings)
-    yield {"type": "meta", "style": styles.style_meta(ctx["spec"], style)}
+    yield {
+        "type": "meta",
+        "style": styles.style_meta(ctx["spec"], style),
+        "mode": ctx.get("mode", MODE_GROUNDED),
+    }
 
     buf: list[str] = []
     async for delta in _stream_model_raw(ctx["cfg"], ctx["system_prompt"], ctx["user_prompt"], client):
@@ -615,7 +660,8 @@ async def revise_article(
     if not revised.get("sections"):
         revised = {**article, "sections": article.get("sections", [])}
 
-    cites = check_citations(revised, blocks)
+    retrieval_mode = MODE_GROUNDED if len(blocks) >= MIN_GROUNDED_BLOCKS else MODE_GENERAL
+    cites = check_citations(revised, blocks, retrieval_mode)
     review = review_article(revised, rules)
     figs = attach_figures(revised)
     return {
@@ -626,7 +672,10 @@ async def revise_article(
         "html": export_html.article_to_html(revised, figs),
         "sources": blocks,
         "rules": rule_items,
-        "meta": {"terms": [], "scanned": 0, "revised": True},
+        "meta": {
+            "terms": [], "scanned": 0, "revised": True,
+            "mode": cites["mode"], "retrievalMode": retrieval_mode,
+        },
         "citations": cites,
         "review": review,
         "style": styles.style_meta(spec, style),

@@ -358,12 +358,16 @@ def load_rules():
         data = json.loads(p.read_text(encoding="utf-8"))
         # 文件级 context 标记适用场景：submission.json 只在投稿校验时生效
         ctx = data.get("context")
+        # 文件级 source 随规则带出：规则检索要能显示出处，版本对比要能统计来源版本
+        source = data.get("source", "")
         for r in data.get("rules", []):
             if r.get("type") not in HANDLERS:
                 skipped.append(r["id"])
                 continue
             if ctx:
                 r["context"] = ctx
+            if source:
+                r["source"] = source
             rules.append(r)
     return rules, skipped
 

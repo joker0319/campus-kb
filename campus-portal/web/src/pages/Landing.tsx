@@ -34,6 +34,7 @@ export default function Landing() {
         <nav className={`${s.nav} ${s.in}`} style={D('.08s')} aria-label="主导航">
           <a href="#/compose">写文章</a>
           <a href="#/assistant">内容助手</a>
+          <a href="#/archive">往期推文</a>
           <a href="#/desk">校稿台</a>
         </nav>
       </header>
@@ -66,6 +67,9 @@ export default function Landing() {
               </a>
               <a className={s.ctaGhost} href="#/assistant">
                 问问内容助手
+              </a>
+              <a className={s.ctaGhost} href="#/archive">
+                翻往期推文
               </a>
             </div>
           </div>

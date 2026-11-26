@@ -69,17 +69,25 @@ async def run_pipeline_stream(
     """端到端成稿，逐步发步骤事件；最终 done 的 result 可直接下发前端。"""
     # 1. 检索（确定性）：定文体 + 混合检索素材 + 拼提示
     ctx = compose._prepare(topic, rules, style, settings)
+    mode = ctx.get("mode", compose.MODE_GROUNDED)
     yield {
         "type": "meta",
         "style": styles.style_meta(ctx["spec"], style),
         "steps": PLANNED_STEPS,
         "sourceCount": len(ctx["blocks"]),
+        "mode": mode,
     }
+    terms = "、".join(ctx["meta"].get("terms") or [])[:60]
+    detail = (
+        f"语料未覆盖该选题 · 通识兜底（检索词 {terms}）"
+        if mode == compose.MODE_GENERAL
+        else f"命中 {len(ctx['blocks'])} 条候选素材，成稿后将逐段核对出处（检索词 {terms}）"
+    )
     yield {
         "type": "step",
         "id": "retrieve",
         "label": "检索语料",
-        "detail": f"命中 {len(ctx['blocks'])} 条素材 · 检索词 {'、'.join(ctx['meta'].get('terms') or [])[:60]}",
+        "detail": detail,
     }
 
     # 2. 成稿（模型）：复用流式调用，逐字吐原始 JSON 片段
@@ -93,13 +101,20 @@ async def run_pipeline_stream(
     article = compose.parse_article("".join(buf))
     if not article.get("sections"):
         raise deepseek.DeepSeekUnavailable("模型返回内容不完整，请重试")
-    prepared = compose.check_citations(article, ctx["blocks"])
+    prepared = compose.check_citations(article, ctx["blocks"], mode)
     paragraph_count = prepared.get("paragraphCount", 0)
+    general_count = prepared.get("generalParagraphs", 0)
+    # 用成稿后的最终模式，不用检索预判：弱相关素材命中不少也会写出通识段
+    compose_detail = (
+        f"完成 {paragraph_count} 段（{general_count} 段通识撰写，需核对）"
+        if general_count
+        else f"完成 {paragraph_count} 个有据段落"
+    )
     yield {
         "type": "step",
         "id": "compose",
         "label": "Agent 成稿",
-        "detail": f"完成 {paragraph_count} 个有据段落",
+        "detail": compose_detail,
     }
 
     # 3. 发前检查（确定性规则引擎）：先组装一次，拿到 review 再决定是否修订

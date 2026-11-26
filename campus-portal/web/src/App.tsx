@@ -3,13 +3,15 @@ import Landing from './pages/Landing';
 import Desk from './pages/Desk';
 import Assistant from './pages/Assistant';
 import Compose from './pages/Compose';
+import Archive from './pages/Archive';
 
-type Route = 'home' | 'desk' | 'assistant' | 'compose';
+type Route = 'home' | 'desk' | 'assistant' | 'compose' | 'archive';
 
 const parse = (): Route => {
   if (window.location.hash.startsWith('#/desk')) return 'desk';
   if (window.location.hash.startsWith('#/assistant')) return 'assistant';
   if (window.location.hash.startsWith('#/compose')) return 'compose';
+  if (window.location.hash.startsWith('#/archive')) return 'archive';
   return 'home';
 };
 
@@ -34,5 +36,6 @@ export default function App() {
   if (route === 'desk') return <Desk />;
   if (route === 'assistant') return <Assistant />;
   if (route === 'compose') return <Compose />;
+  if (route === 'archive') return <Archive />;
   return <Landing />;
 }

@@ -175,6 +175,97 @@ class TestCheckCitations:
         report = compose.check_citations(article, [])
         assert report["paragraphCount"] == 0
 
+    def test_general_mode_marks_uncited_as_knowledge(self) -> None:
+        """语料未覆盖时无引用段落算通识撰写，不冒充有据。"""
+        article = {
+            "sections": [{"heading": "", "paragraphs": [
+                {"text": "跨年活动常有倒计时与祝福环节。", "cites": []},
+            ]}],
+        }
+        report = compose.check_citations(article, [], mode=compose.MODE_GENERAL)
+        assert report["uncitedParagraphs"] == 1
+        assert report["generalParagraphs"] == 1
+        assert report["mode"] == compose.MODE_GENERAL
+        assert report["grounded"] is False
+
+
+class TestGeneralCompose:
+    """语料未覆盖的选题（如元旦跨年）也要能出完整稿，并标为通识。"""
+
+    def _run(self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path, payload: dict):
+        monkeypatch.setenv("CAMPUS_CORPUS_DIR", str(tmp_path))
+        settings = deepseek.Settings(deepseek_api_key="sk-test", deepseek_model="test-model")
+        fake = _FakeAgentClient([
+            {"choices": [{"message": {"role": "assistant", "content": json.dumps(payload, ensure_ascii=False)}}]}
+        ])
+        rules, _ = checker.load_rules()
+        result = asyncio.run(
+            compose.compose_article("写一篇元旦跨年活动的推文", rules, settings=settings, client=fake)
+        )
+        return result, fake.calls
+
+    def test_empty_corpus_yields_full_article_in_general_mode(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        payload = {
+            "title": "元旦跨年，与你一起奔赴新一年",
+            "lead": "辞旧迎新，校园里满是期待。",
+            "sections": [{"heading": "跨年的仪式感", "paragraphs": [
+                {"text": "倒计时、互道祝福，是许多人迎接新年的方式。", "cites": []},
+            ]}],
+            "imageSuggestions": [],
+        }
+        result, calls = self._run(monkeypatch, tmp_path, payload)
+        assert result["article"]["title"] == payload["title"]
+        assert result["sources"] == []
+        assert result["meta"]["mode"] == compose.MODE_GENERAL
+        assert result["citations"]["mode"] == compose.MODE_GENERAL
+        assert result["citations"]["generalParagraphs"] == 1
+        assert result["citations"]["grounded"] is False
+        user = calls[0]["json"]["messages"][1]["content"]
+        assert "【通识成稿】" in user
+
+    def test_weak_hits_with_uncited_paragraphs_not_marked_grounded(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        """命中弱相关素材但成稿有无据段落时，仍判 general，不能把编造洗成有据。"""
+        # 两份都含「活动 / 跨年」的弱相关素材，让检索预判为 grounded（命中 >= 2 块）
+        (tmp_path / "club_WX.txt").write_text(
+            "元旦跨年活动里的社团技能展示：见缝插针练排演，把训练成果搬到舞台上。\n",
+            encoding="utf-8",
+        )
+        (tmp_path / "event_WX.txt").write_text(
+            "校园文化活动丰富多彩，跨年时节各学生社团会组织节目与互动摊位。\n",
+            encoding="utf-8",
+        )
+        payload = {
+            "title": "元旦跨年", "lead": "导语",
+            "sections": [{"heading": "跨年", "paragraphs": [
+                {"text": "据社团素材，排练很辛苦。", "cites": ["A1"]},
+                {"text": "跨年当晚举办了盛大活动，具体流程如下。", "cites": []},
+            ]}], "imageSuggestions": [],
+        }
+        result, _ = self._run(monkeypatch, tmp_path, payload)
+        assert result["citations"]["retrievalMode"] == compose.MODE_GROUNDED
+        assert result["citations"]["mode"] == compose.MODE_GENERAL
+        assert result["citations"]["generalParagraphs"] == 1
+        assert result["citations"]["grounded"] is False
+        assert result["meta"]["mode"] == compose.MODE_GENERAL
+
+    def test_general_prompt_forbids_fabricated_facts(
+        self, monkeypatch: pytest.MonkeyPatch, tmp_path: Path
+    ) -> None:
+        payload = {
+            "title": "跨年活动", "lead": "导语",
+            "sections": [{"heading": "安排", "paragraphs": [
+                {"text": "活动安排以学校通知为准。", "cites": []},
+            ]}], "imageSuggestions": [],
+        }
+        _result, calls = self._run(monkeypatch, tmp_path, payload)
+        system = calls[0]["json"]["messages"][0]["content"]
+        assert "严禁编造本校具体人名" in system
+        assert "不要输出「（素材不足，待补充）」" in system
+
 
 class TestReviewArticle:
     def test_review_skips_submission_format_rules(self) -> None:

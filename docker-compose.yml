@@ -24,11 +24,14 @@ services:
       CAMPUS_ALLOW_ORIGINS: ${CAMPUS_ALLOW_ORIGINS:-}
       CAMPUS_CORPUS_DIR: /app/corpus/text
       CAMPUS_INDEX_DIR: /app/corpus/.index
+      CAMPUS_SESSION_DIR: /app/data/sessions
     volumes:
       # 93 份文本语料（只读）
       - ./campus-kb/corpus/text:/app/corpus/text:ro
       # 向量索引需可写：语料更新后会在容器内重建
       - ./campus-kb/corpus/.index:/app/corpus/.index
+      # 对话记忆需可写：容器重建后仍能接着上次会话
+      - ./campus-kb/data/sessions:/app/data/sessions
       # 只挂图注元数据，不挂 691MB 原图；前端按既定方案显示占位
       - ./campus-kb/corpus/images/INDEX.json:/app/corpus/images/INDEX.json:ro
       - ./campus-kb/corpus/images/captions.json:/app/corpus/images/captions.json:ro

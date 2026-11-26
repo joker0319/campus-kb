@@ -97,7 +97,13 @@ class ChatResponse(BaseModel):
 
 class AgentRequest(BaseModel):
     message: str = Field(min_length=1, max_length=4000, description="用户本轮提问")
-    history: list[ChatMessage] = Field(default_factory=list, description="最近若干轮对话")
+    history: list[ChatMessage] = Field(default_factory=list, description="最近若干轮对话（无 sessionId 时的兜底）")
+    sessionId: str | None = Field(
+        default=None,
+        max_length=64,
+        pattern=r"^[A-Za-z0-9_-]*$",
+        description="会话 ID；提供后由服务端持久化对话记忆，刷新页面可续聊",
+    )
 
 
 class AgentStep(BaseModel):
@@ -146,6 +152,10 @@ class ComposeCitationReport(BaseModel):
     invalidCites: list[str]
     paragraphCount: int
     grounded: bool
+    # grounded=全部段落有据；general=含无引用段落（语料未覆盖，通识撰写需核对）
+    mode: str = "grounded"
+    generalParagraphs: int = 0
+    retrievalMode: str = "grounded"
 
 
 class ComposeReview(BaseModel):
@@ -212,3 +222,38 @@ class PipelineRequest(ComposeRequest):
     autoRevise: bool = Field(
         default=True, description="发前检查有 error 时是否自动修订一轮"
     )
+
+
+class ArchiveArticle(BaseModel):
+    """往期公众号推文条目：元数据来自抓取记录，摘要来自入库正文。"""
+
+    title: str
+    url: str
+    published: str
+    month: str
+    file: str
+    excerpt: str
+    chars: int
+    images: int
+
+
+class ArchiveMonth(BaseModel):
+    month: str
+    count: int
+
+
+class ArchiveResponse(BaseModel):
+    total: int
+    months: list[ArchiveMonth]
+    articles: list[ArchiveArticle]
+    query: str = ""
+    month: str = ""
+
+
+class ArchiveArticleResponse(BaseModel):
+    title: str
+    published: str
+    url: str
+    file: str
+    text: str
+    truncated: bool = False

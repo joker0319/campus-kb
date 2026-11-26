@@ -23,16 +23,20 @@ sys.path.insert(0, str(Path(__file__).resolve().parent.parent))
 
 import checker  # noqa: E402  # sys.path 调整必须在前
 from . import agent  # noqa: E402
+from . import archive  # noqa: E402
 from . import deepseek  # noqa: E402
 from .compose import compose_article, compose_article_stream, revise_article  # noqa: E402
 from . import docx_io  # noqa: E402
 from . import figures  # noqa: E402
+from . import memory  # noqa: E402
 from . import pipeline  # noqa: E402
 from . import search as corpus_search  # noqa: E402
 
 from .schemas import (  # noqa: E402
     AgentRequest,
     AgentResponse,
+    ArchiveArticleResponse,
+    ArchiveResponse,
     ChatRequest,
     ChatResponse,
     ComposeRequest,
@@ -220,6 +224,12 @@ async def chat(req: ChatRequest, engine: EngineDep) -> ChatResponse:
     return ChatResponse(**result)
 
 
+def _agent_history(req: AgentRequest) -> list[dict]:
+    """有会话记忆时以服务端为准；首次会话或无 sessionId 时兼容前端传入的 history。"""
+    stored = memory.load(req.sessionId) if req.sessionId else []
+    return stored or [m.model_dump() for m in req.history]
+
+
 @app.post("/api/agent")
 async def agent_chat(req: AgentRequest, engine: EngineDep) -> AgentResponse:
     """Agent 助手：模型自选工具，工具在后端确定性执行，结果回灌后生成回答。
@@ -228,15 +238,13 @@ async def agent_chat(req: AgentRequest, engine: EngineDep) -> AgentResponse:
     未配置密钥 503；上游失败 502。
     """
     try:
-        result = await agent.run_agent(
-            req.message,
-            engine[0],
-            [m.model_dump() for m in req.history],
-        )
+        result = await agent.run_agent(req.message, engine[0], _agent_history(req))
     except deepseek.DeepSeekNotConfigured as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     except deepseek.DeepSeekUnavailable as exc:
         raise HTTPException(status_code=502, detail=str(exc)) from exc
+    if req.sessionId:
+        memory.append(req.sessionId, req.message, result["answer"])
     return AgentResponse(**result)
 
 
@@ -254,13 +262,14 @@ async def agent_stream(req: AgentRequest, engine: EngineDep) -> StreamingRespons
             detail="未配置 DEEPSEEK_API_KEY，请在 campus-kb/.env 中填入密钥",
         )
 
+    history = _agent_history(req)
+
     async def frames():
         try:
-            async for event in agent.run_agent_stream(
-                req.message,
-                engine[0],
-                [m.model_dump() for m in req.history],
-            ):
+            async for event in agent.run_agent_stream(req.message, engine[0], history):
+                if event.get("type") == "done" and req.sessionId:
+                    answer = (event.get("result") or {}).get("answer", "")
+                    memory.append(req.sessionId, req.message, answer)
                 yield f"data: {json.dumps(event, ensure_ascii=False)}\n\n"
         except (
             deepseek.DeepSeekUnavailable,
@@ -282,6 +291,13 @@ async def agent_stream(req: AgentRequest, engine: EngineDep) -> StreamingRespons
             "X-Accel-Buffering": "no",
         },
     )
+
+
+@app.delete("/api/agent/memory/{session_id}")
+async def clear_agent_memory(session_id: str) -> dict[str, bool]:
+    """清空会话记忆，供前端「新对话」调用；非法 id 视为无记录，不报错。"""
+    memory.clear(session_id)
+    return {"ok": True}
 
 
 @app.post("/api/compose")
@@ -421,3 +437,20 @@ def figure_stats() -> dict:
     if not figures.available():
         return {"total": 0, "kinds": {}, "hint": "先执行 uv run python tools/build_figure_index.py"}
     return {"total": figures.available(), "kinds": dict(figures.kind_stats())}
+
+
+@app.get("/api/archive")
+def archive_list(q: str = "", month: str = "") -> ArchiveResponse:
+    """往期公众号推文：按发布日期倒序，支持关键词与月份筛选。"""
+    return ArchiveResponse(**archive.list_articles(q, month))
+
+
+@app.get("/api/archive/article")
+def archive_article(file: str) -> ArchiveArticleResponse:
+    """单篇入库正文预览；文件名走白名单，防止读到语料目录外的文件。"""
+    try:
+        return ArchiveArticleResponse(**archive.article_detail(file))
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except LookupError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
