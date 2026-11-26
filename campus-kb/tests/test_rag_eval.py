@@ -24,10 +24,16 @@ def offline_rag(monkeypatch: pytest.MonkeyPatch, tmp_path: Path):
 
 
 def test_cases_are_valid() -> None:
-    """评测集里的每条期望都必须真的在语料中，否则基线没有意义。"""
+    """公开档每条期望都必须真的在语料中，否则基线没有意义。"""
     cases = load_cases()
     assert len(cases) >= 20
+    assert all(c.get("scope", "public") == "public" for c in cases)
     validate_cases(cases)
+
+
+def test_internal_cases_are_only_loaded_explicitly() -> None:
+    """内部档案用例默认不参与公开档基线。"""
+    assert len(load_cases()) < len(load_cases(scope="all"))
 
 
 def test_keyword_baseline_does_not_regress() -> None:
@@ -35,7 +41,21 @@ def test_keyword_baseline_does_not_regress() -> None:
     report = evaluate(cases, mode="keyword", k=5)
     summary = report["summary"]
 
+    assert summary["scope"] == "public"
     assert summary["cases"] == len(cases)
     assert summary["degraded"] is True
+    assert summary["hit_at_k"] >= 0.85
+    assert summary["mrr"] >= 0.75
+
+
+def test_internal_keyword_baseline_does_not_regress() -> None:
+    """显式 all 档仍能评测内部档案用例，检索时不退化。"""
+    from api.search import SCOPE_ALL
+
+    cases = load_cases(scope=SCOPE_ALL)
+    report = evaluate(cases, mode="keyword", k=5, scope=SCOPE_ALL)
+    summary = report["summary"]
+
+    assert summary["cases"] == len(cases)
     assert summary["hit_at_k"] >= 0.85
     assert summary["mrr"] >= 0.75

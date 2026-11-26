@@ -29,11 +29,12 @@
 | 模块 | 状态 | 说明 |
 | --- | --- | --- |
 | 规则引擎 `campus-kb` | ✅ 可用 | 19 条规则 / 8 个规则文件；坏样例命中 17 项，合规样例 0 误报 |
-| RAG 语义检索 `api/rag.py` | ✅ 可用 | 93 份语料切成 1144 个带起止行号的段落块；BM25（字符 2-gram）+ 本地 ONNX `bge-small-zh-v1.5` 向量，RRF 融合；模型缺失自动降级纯 BM25。向量索引按语料版本戳落盘，入库新文章自动重建 |
+| RAG 语义检索 `api/rag.py` | ✅ 可用 | 119 份公开推文切成带起止行号的段落块；BM25（字符 2-gram）+ 本地 ONNX `bge-small-zh-v1.5` 向量，RRF 融合；模型缺失自动降级纯 BM25。向量索引按语料版本戳落盘，入库新文章自动重建 |
+| 语料可见范围 `api/search.py` | ✅ 可用 | `scope=public`（默认）排除 26 份 `*_DOCUMENT.txt` 内部档案，成稿 / Agent / 公开检索都走这一档，避免把行程、采购论证、手机号写进公众号文章；`scope=all` 仅在人工显式调用时包含内部档案（`/api/search?scope=all`、评测 `--scope all`）。两档版本戳奇偶隔离、向量索引各建一份不互相覆盖；全量重建分批编码并限制 ONNX 线程，内存峰值从约 7GB 降到 1.2GB |
 | 文章生成 `#/compose` | ✅ 可用 | 选文体（自动判断 / 新闻动态 / 喜讯捷报 / 致辞讲稿，各带结构骨架与语气要求）→ 输入选题 → 检索知识库 → DeepSeek 成结构化草稿（标题/导语/分节正文/配图建议）→ 后端校验每段出处 + 发前规范检查；成稿后可**继续下指令改稿**（沿用原素材编号、保留多版本可回看），草稿存本地刷新不丢；无依据段落明确标注，不臆测。成稿同时给一份**内联样式 HTML**，点「复制排版」粘进公众号编辑器就是排好的版式。**成稿过程是流式的**：SSE 边写边显示，标题、导语、段落依次出现，不用干等十几秒。新增**一键成稿**（主按钮）：输入一句话自动串完检索→成稿→发前检查→自动修订→排版导出，右侧实时显示四步轨迹，`POST /api/pipeline/stream`；点「生成文章」则仍只走流式成稿，方便手动接力改稿。`POST /api/compose` + `POST /api/compose/stream` + `POST /api/compose/revise` + `POST /api/pipeline/stream`，真实密钥端到端验证通过 |
 | 配图推荐 `api/figures.py` | ✅ 可用 | 把往期推文抓下的 2331 张原图筛成 **672 张真配图**（滤掉分隔线/图标/占位块/动图，按字节去重），逐张标注描述与性质，其中 **397 张可推荐**；id 用**内容哈希**（`f` + sha1 前 10 位），重建不清空标注；成稿按「图注 + 来源文章」给每节推可用真图，实景优先、肖像不推、分数不够宁可空着；界面**只显示占位块 + 图注 + 尺寸 + 来源**，不加载真实照片，需要那张图时点「取原图」；导出的 Markdown 写〔配图占位：图注〕，编辑按此替换实拍图 |
 | 公众号排版导出 `api/export_html.py` | ✅ 可用 | 结构化草稿 → 一段可直接粘进公众号编辑器的 HTML：**全部内联 `style`**（编辑器会把 `<style>` 与 class 剥掉）、标题居中、导语灰字、小标题带左侧竖线、正文 16px/1.9 两端对齐；不输出 `[A#]` 内部编号，跳过「素材不足」段，配图统一给虚线占位框（图注 + 尺寸 + 「请替换为对应现场照片」） |
-| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/stream`（流式成稿 SSE）、`/api/compose/revise`（改稿）、`/api/figure/{id}`（往期配图下发）、`/api/figures/stats`（图库状态）、`/api/agent/stream`（助手 SSE）、`/api/pipeline/stream`（一键成稿 SSE），215 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
+| 薄后端（FastAPI） | ✅ 可用 | `/api/review`、`/api/rules`、`/api/health`、`/api/search`、`/api/review-file`（docx）、`/api/chat`（DeepSeek）、`/api/agent`（Agent 工具调用）、`/api/compose`（文章生成）、`/api/compose/stream`（流式成稿 SSE）、`/api/compose/revise`（改稿）、`/api/figure/{id}`（往期配图下发）、`/api/figures/stats`（图库状态）、`/api/agent/stream`（助手 SSE）、`/api/pipeline/stream`（一键成稿 SSE），272 个 pytest 锁基线，见 [ADR-002](campus-portal/docs/adr-002-python-backend.md) |
 | 公众号语料入库 | ✅ 可用 | `campus-kb/tools/fetch_wechat.py` 抓自有公众号推文转 `corpus/text/*_WX.txt`，`_WX` 标记来源；文字型直接提取，长图型用 macOS Vision OCR（`tools/ocr.swift`，切片拼接识别）。入库即可被 `/api/search` 与 Agent 检索，无需重启 |
 | 校稿台前端 | ✅ 可用 | 三栏核对、筛选、忽略、键盘导航；可粘贴任意稿件、上传 docx 送审，按后端精确命中动态标红；档案检索接 `/api/search`，报告可下载为 Markdown |
 | 首页 | ✅ 完成 | 导航 + 主体（左：标题与墨点入口；右：3D 稿件卡轮播）+ 底部；墨点指向 `#/assistant` |
@@ -89,20 +90,25 @@ uv run uvicorn api.main:app --reload --port 8000        # 启动 API
 
 `campus-kb/evals/rag_cases.json` 收了 28 条真实提问，期望写成「语料文件 + 必须出现的关键词」而不是写死行号；改分块或加新语料后行号会变、关键词不变。命中判定为 top-k 内出现期望文件且片段含关键词，同时记录 hit@k、MRR 与是否降级。
 
+用例按可见范围分档：24 条公开推文用例默认参与评测；4 条命中 `*_DOCUMENT.txt` 内部档案的用例标了 `"scope": "all"`，只在显式 `--scope all` 时参与——与成稿 / Agent 默认不碰内部档案的口径一致。
+
 ```bash
 cd campus-kb
 CAMPUS_EMBEDDING=off python -m evals.rag_eval --mode keyword --k 5
 python -m evals.rag_eval --mode hybrid --k 5 --report /tmp/rag_baseline.json
+python -m evals.rag_eval --mode hybrid --k 5 --scope all   # 含内部档案用例
 ```
 
-当前基线：
+当前基线（119 份公开推文 + 26 份内部档案）：
 
-| 模式 | hit@5 | MRR | 降级 |
+| 档 / 模式 | hit@5 | MRR | 降级 |
 |---|---|---|---|
-| hybrid（BM25 + 向量） | **100%（28/28）** | 0.8542 | 否 |
-| keyword（纯 BM25） | 89.3%（25/28） | 0.7976 | 是 |
+| public · hybrid（BM25 + 向量） | **100%（24/24）** | 0.8750 | 否 |
+| public · keyword（纯 BM25） | 95.8%（23/24） | 0.8472 | 是 |
+| all · hybrid | **100%（28/28）** | 0.8304 | 否 |
+| all · keyword | 89.3%（25/28） | 0.7798 | 是 |
 
-keyword 漏掉的三条是「奠基日期」「奠基议程」「教师节推文」，hybrid 全部召回——这正是稠密检索补位的价值。`tests/test_rag_eval.py` 锁住 keyword 基线（hit@5 ≥ 0.85、MRR ≥ 0.75）并校验评测集本身没和语料脱节；混合检索基线用上面的命令手工跑。
+public keyword 漏掉「教师节推文」，hybrid 补回——这正是稠密检索补位的价值。`tests/test_rag_eval.py` 锁住两档 keyword 基线（hit@5 ≥ 0.85、MRR ≥ 0.75）并校验评测集没和语料脱节；混合检索基线用上面的命令手工跑。
 
 ### 4.2 前端
 
@@ -148,7 +154,7 @@ curl -u "$CAMPUS_BASIC_USER:$CAMPUS_BASIC_PASSWORD" http://127.0.0.1:8080/api/he
 
 | 路径 | 挂载方式 | 原因 |
 | --- | --- | --- |
-| `campus-kb/corpus/text` | 只读 | 93 份文本语料，检索输入 |
+| `campus-kb/corpus/text` | 只读 | 119 份公开推文 + 26 份内部档案（默认不进检索池），检索输入 |
 | `campus-kb/corpus/.index` | 可写 | 向量索引是语料派生物，更新语料后需在容器内重建 |
 | `campus-kb/corpus/images/INDEX.json`、`captions.json` | 只读 | 只挂图注/来源元数据；691MB 原图不进容器，界面按既定方案显示占位 |
 | `rules/`、`authority.json`、`checker.py` | 进镜像 | 规则与权威口径随代码版本走 |
@@ -286,7 +292,7 @@ docker compose -f docker-compose.yml -f docker-compose.prod.yml down
 
 - TypeScript `strict`；ESLint 10 flat config 开 `recommendedTypeChecked`；
 - Prettier 管格式，`eslint-config-prettier` 关掉 ESLint 冲突项；
-- 测试：前端 101 个（Vitest + Testing Library，含写文章页 21 项 + 增量解析 6 项），后端 215 个（pytest，含文章生成 19 项 + 文体模板 14 项 + 配图推荐 16 项 + 流式成稿 6 项 + 一键流水线 6 项 + 排版导出 9 项 + 语义检索 15 项 + RAG 评测基线）；单测默认关闭本地 embedding、用假向量注入，不依赖模型下载；
+- 测试：前端 101 个（Vitest + Testing Library，含写文章页 21 项 + 增量解析 6 项），后端 272 个（pytest，含文章生成 19 项 + 文体模板 14 项 + 配图推荐 16 项 + 流式成稿 6 项 + 一键流水线 6 项 + 排版导出 9 项 + 语义检索 15 项 + RAG 评测基线 + 语料可见范围隔离 12 项）；单测默认关闭本地 embedding、用假向量注入，不依赖模型下载；
 - 运行时依赖只有 React 本体 + FastAPI（docx 解析用 `python-docx`，文件上传用 `python-multipart`，AI 问答用 `httpx` + `pydantic-settings`）。
 
 ## 7. 开发日志

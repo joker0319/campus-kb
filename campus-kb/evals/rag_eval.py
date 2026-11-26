@@ -20,13 +20,19 @@ from pathlib import Path
 from typing import Any
 
 from api import rag
-from api.search import corpus_dir, load_corpus, search
+from api.search import SCOPE_ALL, SCOPE_PUBLIC, corpus_dir, load_corpus, search
 
 CASES_PATH = Path(__file__).with_name("rag_cases.json")
 
 
-def load_cases(path: str | Path | None = None) -> list[dict[str, Any]]:
-    """读取评测集；缺字段时直接报错，避免静默漏评。"""
+def load_cases(
+    path: str | Path | None = None, scope: str = SCOPE_PUBLIC
+) -> list[dict[str, Any]]:
+    """读取评测集；缺字段时直接报错，避免静默漏评。
+
+    scope=public（默认）跳过标了 `scope: all` 的内部档案用例，
+    与成稿 / Agent / 公开检索的默认可见范围保持一致。
+    """
     source = Path(path) if path else CASES_PATH
     data = json.loads(source.read_text(encoding="utf-8"))
     cases = data.get("cases") or []
@@ -38,12 +44,16 @@ def load_cases(path: str | Path | None = None) -> list[dict[str, Any]]:
         for exp in case["expect"]:
             if not exp.get("file") or not exp.get("contains"):
                 raise ValueError(f"期望缺 file/contains：{case['id']} {exp}")
+    if scope == SCOPE_PUBLIC:
+        cases = [c for c in cases if c.get("scope", SCOPE_PUBLIC) == SCOPE_PUBLIC]
     return cases
 
 
-def validate_cases(cases: list[dict[str, Any]], root: str | None = None) -> None:
+def validate_cases(
+    cases: list[dict[str, Any]], root: str | None = None, scope: str = SCOPE_PUBLIC
+) -> None:
     """确认每个期望关键词确实存在于对应语料文件，防止评测集过期。"""
-    docs = load_corpus(root or str(corpus_dir()))
+    docs = load_corpus(root or str(corpus_dir()), scope)
     texts: dict[str, list[str]] = {}
     for chunk in rag.build_chunks(docs):
         texts.setdefault(chunk.file, []).append(chunk.text)
@@ -62,6 +72,7 @@ def evaluate(
     mode: str = "hybrid",
     k: int = 5,
     root: str | None = None,
+    scope: str = SCOPE_PUBLIC,
 ) -> dict[str, Any]:
     """逐条检索并打分。命中 = top-k 内出现期望文件且片段含关键词。"""
     rows: list[dict[str, Any]] = []
@@ -70,7 +81,9 @@ def evaluate(
     reciprocal = 0.0
 
     for case in cases:
-        result = search(case["query"], root=root, limit=k, mode=mode)
+        # 单条用例可用 scope 覆盖（内部档案用例），整集默认按调用方 scope 跑
+        case_scope = case.get("scope", scope)
+        result = search(case["query"], root=root, limit=k, mode=mode, scope=case_scope)
         if not retrieval:
             retrieval = result.get("retrieval") or {}
         rank: int | None = None
@@ -96,6 +109,7 @@ def evaluate(
 
     summary = {
         "mode": mode,
+        "scope": scope,
         "k": k,
         "cases": len(cases),
         "hits": hits,
@@ -130,13 +144,17 @@ def main(argv: list[str] | None = None) -> int:
     parser.add_argument("--k", type=int, default=5)
     parser.add_argument("--cases", help="自定义评测集 JSON")
     parser.add_argument("--corpus-dir", help="自定义语料目录")
+    parser.add_argument(
+        "--scope", default=SCOPE_PUBLIC, choices=[SCOPE_PUBLIC, SCOPE_ALL],
+        help="public（默认，公开语料）/ all（含内部档案用例）",
+    )
     parser.add_argument("--report", help="把完整结果写成 JSON")
     parser.add_argument("--fail-under", type=float, help="hit@k 低于此值时退出码为 1")
     args = parser.parse_args(argv)
 
-    cases = load_cases(args.cases)
-    validate_cases(cases, args.corpus_dir)
-    report = evaluate(cases, mode=args.mode, k=args.k, root=args.corpus_dir)
+    cases = load_cases(args.cases, args.scope)
+    validate_cases(cases, args.corpus_dir, args.scope)
+    report = evaluate(cases, mode=args.mode, k=args.k, root=args.corpus_dir, scope=args.scope)
     print(format_report(report))
 
     if args.report:

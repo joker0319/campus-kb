@@ -32,6 +32,7 @@ BM25_K1 = 1.5
 BM25_B = 0.75
 RRF_K = 60
 CANDIDATE_K = 40         # 每路进融合的候选数
+_EMBED_BATCH = 32        # 全量索引重建时的编码批量，控制内存峰值
 
 def _load_local_env() -> None:
     """把 campus-kb/.env 里的 CAMPUS_* / HF_* 配置补进 os.environ（shell 变量优先）。
@@ -188,7 +189,12 @@ def _get_model():
             )
             from fastembed import TextEmbedding
 
-            _model = TextEmbedding(model_name=MODEL_NAME)
+            # onnxruntime 默认占满所有核心，容器里全量重建索引时内存会冲到数 GB
+            # 并被 OOM 重启。限制线程数后重建平稳，检索延迟增加可忽略。
+            _model = TextEmbedding(
+                model_name=MODEL_NAME,
+                threads=int(os.environ.get("CAMPUS_EMBED_THREADS", "2")),
+            )
         except Exception:  # 模型缺失、下载失败、onnxruntime 不可用……
             _model_failed = True
             _model = None
@@ -230,7 +236,12 @@ def _vectors_for(chunks: tuple[Chunk, ...], stamp: int, root: str):
     if model is None:
         return None, False
     try:
-        vecs = [[float(x) for x in v] for v in model.embed([c.text for c in chunks])]
+        # 分批编码：一次性把全部语料块塞给 ONNX 会占用数 GB 内存；
+        # 小批量流式产出既压住峰值，也让长语料重建不至于 OOM。
+        vecs: list[list[float]] = []
+        for start in range(0, len(chunks), _EMBED_BATCH):
+            batch = [c.text for c in chunks[start : start + _EMBED_BATCH]]
+            vecs.extend([[float(x) for x in v] for v in model.embed(batch)])
     except Exception:
         return None, False
     if len(vecs) != len(chunks):

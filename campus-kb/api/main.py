@@ -163,12 +163,19 @@ def search(
     mode: Annotated[
         str, Query(description="hybrid / keyword / semantic / strict")
     ] = "hybrid",
+    scope: Annotated[
+        str, Query(description="public（默认，排除内部档案）/ all（含内部档案，仅供内部核查）")
+    ] = corpus_search.SCOPE_PUBLIC,
 ) -> dict:
     """语料库混合检索：BM25 + 本地语义向量 → 文件名 + 行号 + 摘录 + 召回方式。
 
     结果里的 retrieval 字段说明本次是否真的启用了语义路（模型缺失时自动降级 BM25）。
+    scope 默认 public，外部成稿与问答链路不会把内部档案当素材。
     """
-    return corpus_search.search(q, limit=limit, mode=mode)
+    try:
+        return corpus_search.search(q, limit=limit, mode=mode, scope=scope)
+    except ValueError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @app.post("/api/review-file")

@@ -187,6 +187,24 @@ def test_hybrid_uses_dense_path_and_writes_index(tmp_path, fake_model):
     assert len(data["vectors"]) == data["chunks"]
 
 
+def test_index_build_batches_embed_to_cap_memory(monkeypatch, tmp_path, fake_model):
+    """全量重建时分批编码，避免一次性把数千 chunks 塞进 ONNX 撑爆内存。"""
+    batches: list[int] = []
+    real_embed = fake_model.embed
+
+    def tracked_embed(texts):
+        batches.append(len(texts))
+        yield from real_embed(texts)
+
+    monkeypatch.setattr(fake_model, "embed", tracked_embed)
+    # 造出远超单批上限的块数
+    root = _corpus(tmp_path, {"big": "\n".join(f"第{i}行科研内容 " * 12 for i in range(1, 25))})
+    search.search("科研", root=root)
+    assert batches
+    assert max(batches) <= rag._EMBED_BATCH
+    assert len(batches) >= 2
+
+
 def test_index_is_reused_not_recomputed(tmp_path, fake_model):
     root = _corpus(tmp_path, {"a": "产学研融合与科研成果 " * 40})
     search.search("科研", root=root)

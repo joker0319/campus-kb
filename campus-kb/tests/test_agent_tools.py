@@ -53,7 +53,8 @@ class TestArchiveTimeline:
         (tmp_path / "活动A_20260101_WX.txt").write_text(
             "开学典礼致辞\n第二行也提开学典礼\n", encoding="utf-8"
         )
-        (tmp_path / "活动B_130421_DOCUMENT.txt").write_text(
+        # 用 _WX 后缀：内部档案默认不进检索池，日期解析仍按 DDMMYY 验证
+        (tmp_path / "活动B_130421_WX.txt").write_text(
             "开学典礼与奠基\n", encoding="utf-8"
         )
         (tmp_path / "无日期档案.txt").write_text("开学典礼记录\n", encoding="utf-8")
