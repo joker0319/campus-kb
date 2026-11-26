@@ -105,20 +105,24 @@ describe('往期推文档案页', () => {
     expect(String(call?.[0])).toContain('q=%E6%96%B0%E6%9D%90%E6%96%99');
   });
 
-  it('按月份下拉筛选并清除', async () => {
+  it('按月份下拉筛选，只显示选中月份、不留空分组', async () => {
     const user = userEvent.setup();
     render(<Archive />);
     await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
 
-    const dropdown = screen.getByLabelText('按月份筛选');
+    const dropdown = screen.getByLabelText('按月份查找');
     expect((dropdown as HTMLSelectElement).value).toBe('');
 
     await user.selectOptions(dropdown, '2026-09');
     await waitFor(() => expect(screen.queryByText('十一月科研进展')).toBeNull());
     expect(screen.getByText('九月活动回顾')).toBeTruthy();
+    // 下拉选项仍是全量（可切换），但时间线只剩有文章的 9 月，不出现「0 篇」空组
+    expect((dropdown as HTMLSelectElement).querySelectorAll('option')).toHaveLength(3);
+    expect(screen.queryByText('2026 年 11 月')).toBeNull();
 
-    await user.selectOptions(dropdown, '');
+    await user.click(screen.getByRole('button', { name: '全部' }));
     await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
+    expect((dropdown as HTMLSelectElement).value).toBe('');
   });
 
   it('预览正文并直达原文', async () => {

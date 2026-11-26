@@ -88,7 +88,21 @@ export default function Archive() {
     setMonth('');
   };
 
+  // 下拉选项用全量月份（筛选后仍能切换）；时间线只渲染真正有文章的月份，
+  // 否则选了某个月会出现其它月份「0 篇」的空分组。
   const groups = data?.months ?? [];
+  const visibleGroups = groups.filter((g) =>
+    data?.articles.some((article) => article.month === g.month),
+  );
+  // 下拉选项按年份分组，跨年时先选年份、再选月份。
+  const yearGroups = groups.reduce<Record<string, { month: string; count: number }[]>>(
+    (acc, item) => {
+      const year = item.month.split('-')[0] ?? '';
+      (acc[year] ??= []).push(item);
+      return acc;
+    },
+    {},
+  );
 
   return (
     <div className={s.page}>
@@ -129,21 +143,33 @@ export default function Archive() {
               </button>
             </form>
             <div className={s.monthFilter}>
+              <button
+                type="button"
+                className={`${s.allBtn} ${month === '' ? s.allBtnOn : ''}`}
+                aria-pressed={month === ''}
+                onClick={() => setMonth('')}
+              >
+                全部
+              </button>
               <label className={s.monthLabel} htmlFor="archive-month">
-                按时间查找
+                按月份查找
               </label>
               <select
                 id="archive-month"
                 className={s.select}
                 value={month}
                 onChange={(event) => setMonth(event.target.value)}
-                aria-label="按月份筛选"
+                aria-label="按月份查找"
               >
-                <option value="">全部时间</option>
-                {groups.map((item) => (
-                  <option key={item.month} value={item.month}>
-                    {monthLabel(item.month)}（{item.count} 篇）
-                  </option>
+                <option value="">选择月份</option>
+                {Object.entries(yearGroups).map(([year, items]) => (
+                  <optgroup key={year} label={`${year} 年`}>
+                    {items.map((item) => (
+                      <option key={item.month} value={item.month}>
+                        {Number(item.month.split('-')[1])} 月（{item.count} 篇）
+                      </option>
+                    ))}
+                  </optgroup>
                 ))}
               </select>
             </div>
@@ -164,7 +190,7 @@ export default function Archive() {
             </div>
           ) : (
             <div className={s.timeline}>
-              {groups.map((group) => (
+              {visibleGroups.map((group) => (
                 <section className={s.group} key={group.month}>
                   <div className={s.groupHead}>
                     <h2 className={s.groupTitle}>{monthLabel(group.month)}</h2>
