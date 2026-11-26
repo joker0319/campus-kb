@@ -60,7 +60,8 @@ describe('往期推文档案页', () => {
           const q = parsed.searchParams.get('q') ?? '';
           const month = parsed.searchParams.get('month') ?? '';
           const filtered = ARCHIVE.articles.filter(
-            (a) => (!month || a.month.startsWith(month)) && (!q || `${a.title}${a.excerpt}`.includes(q)),
+            (a) =>
+              (!month || a.month.startsWith(month)) && (!q || `${a.title}${a.excerpt}`.includes(q)),
           );
           const body: WechatArchive = { ...ARCHIVE, articles: filtered, total: filtered.length };
           return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
@@ -99,9 +100,7 @@ describe('往期推文档案页', () => {
 
     await waitFor(() => expect(screen.queryByText('九月活动回顾')).toBeNull());
     expect(screen.getByText('十一月科研进展')).toBeTruthy();
-    const call = vi
-      .mocked(fetch)
-      .mock.calls.find(([url]) => String(url).includes('q='));
+    const call = vi.mocked(fetch).mock.calls.find(([url]) => String(url).includes('q='));
     expect(String(call?.[0])).toContain('q=%E6%96%B0%E6%9D%90%E6%96%99');
   });
 
@@ -110,30 +109,47 @@ describe('往期推文档案页', () => {
     render(<Archive />);
     await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
 
-    const yearBox = screen.getByLabelText('选择年份') as HTMLSelectElement;
-    const monthBox = screen.getByLabelText('选择月份') as HTMLSelectElement;
-    expect(yearBox.value).toBe('');
-    expect(monthBox.value).toBe('');
+    const yearBtn = screen.getByRole('button', { name: '选择年份' });
+    const monthBtn = screen.getByRole('button', { name: '选择月份' });
+    expect(yearBtn.textContent).toContain('全部年份');
+    expect(monthBtn.textContent).toContain('全部月份');
 
-    // 只选年份：按前缀筛出全年，时间线不留空分组
-    await user.selectOptions(yearBox, '2026');
-    await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
-    expect(monthBox.value).toBe('');
+    // 展开年份下拉，面板在按钮附近且可看到选项
+    await user.click(yearBtn);
+    expect(screen.getByRole('listbox', { name: '选择年份' })).toBeTruthy();
+    await user.click(screen.getByRole('option', { name: /2026 年/ }));
+    await waitFor(() => expect(yearBtn.textContent).toContain('2026 年'));
+    // 只选年份：全年都显示
+    expect(screen.getByText('十一月科研进展')).toBeTruthy();
+    expect(monthBtn.textContent).toContain('全部月份');
 
-    // 再选月份：级联收窄到该月
-    await user.selectOptions(monthBox, '2026-09');
+    // 月份下拉级联到该年，选中后收窄到该月
+    await user.click(monthBtn);
+    await user.click(screen.getByRole('option', { name: /9 月/ }));
     await waitFor(() => expect(screen.queryByText('十一月科研进展')).toBeNull());
     expect(screen.getByText('九月活动回顾')).toBeTruthy();
     expect(screen.queryByText('2026 年 11 月')).toBeNull();
 
     // 换年份会清空月份，避免旧月份导致空结果
-    await user.selectOptions(yearBox, '');
+    await user.click(yearBtn);
+    await user.click(screen.getByRole('option', { name: '全部年份' }));
     await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
-    expect(monthBox.value).toBe('');
+    expect(monthBtn.textContent).toContain('全部月份');
 
     await user.click(screen.getByRole('button', { name: '全部' }));
-    expect(yearBox.value).toBe('');
-    expect(monthBox.value).toBe('');
+    expect(yearBtn.textContent).toContain('全部年份');
+    expect(monthBtn.textContent).toContain('全部月份');
+  });
+
+  it('下拉点击外部或 Esc 关闭', async () => {
+    const user = userEvent.setup();
+    render(<Archive />);
+    await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
+
+    await user.click(screen.getByRole('button', { name: '选择年份' }));
+    expect(screen.getByRole('listbox', { name: '选择年份' })).toBeTruthy();
+    await user.keyboard('{Escape}');
+    expect(screen.queryByRole('listbox', { name: '选择年份' })).toBeNull();
   });
 
   it('预览正文并直达原文', async () => {

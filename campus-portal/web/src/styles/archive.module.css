@@ -140,7 +140,9 @@
   font: inherit;
   font-size: 13px;
   cursor: pointer;
-  transition: border-color 0.2s var(--ease), color 0.2s var(--ease),
+  transition:
+    border-color 0.2s var(--ease),
+    color 0.2s var(--ease),
     background-color 0.2s var(--ease);
 }
 .allBtn:hover {
@@ -152,29 +154,112 @@
   background: var(--brand-tint);
   color: var(--brand);
 }
-.select {
-  appearance: none;
-  min-width: 140px;
+.selectRoot {
+  position: relative;
+  flex: none;
+}
+.selectBtn {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  min-width: 148px;
   border: 1px solid var(--line);
   border-radius: var(--r-sm);
-  background-color: var(--surface);
-  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='12' height='8' viewBox='0 0 12 8'%3E%3Cpath d='M1 1l5 5 5-5' fill='none' stroke='%238c1d2f' stroke-width='1.4' stroke-linecap='round'/%3E%3C/svg%3E");
-  background-repeat: no-repeat;
-  background-position: right 14px center;
-  padding: 10px 38px 10px 14px;
+  background: var(--surface);
+  padding: 10px 14px;
   font: inherit;
   font-size: 13px;
   color: var(--ink);
   cursor: pointer;
   outline: none;
-  transition: border-color 0.2s var(--ease), box-shadow 0.2s var(--ease);
+  transition:
+    border-color 0.2s var(--ease),
+    box-shadow 0.2s var(--ease);
 }
-.select:hover {
+.selectBtn:hover {
   border-color: var(--brand);
 }
-.select:focus {
+.selectBtnOpen {
   border-color: var(--brand);
   box-shadow: 0 0 0 3px var(--brand-tint);
+}
+.selectValue {
+  font-weight: 600;
+}
+.selectPlaceholder {
+  color: var(--ink-3);
+}
+.selectArrow {
+  flex: none;
+  width: 8px;
+  height: 8px;
+  border-right: 1.5px solid var(--brand);
+  border-bottom: 1.5px solid var(--brand);
+  transform: rotate(45deg) translate(-2px, -2px);
+  transition: transform 0.2s var(--ease);
+}
+.selectArrowOpen {
+  transform: rotate(225deg) translate(-1px, -1px);
+}
+.selectPanel {
+  position: absolute;
+  z-index: 8;
+  top: calc(100% + 6px);
+  left: 0;
+  min-width: 100%;
+  max-height: 264px;
+  overflow-y: auto;
+  margin: 0;
+  padding: 6px;
+  list-style: none;
+  border: 1px solid var(--line);
+  border-radius: var(--r-sm);
+  background: var(--surface);
+  box-shadow: var(--shadow-lift);
+  animation: panelIn 0.16s var(--ease);
+}
+@keyframes panelIn {
+  from {
+    opacity: 0;
+    transform: translateY(-4px);
+  }
+  to {
+    opacity: 1;
+    transform: translateY(0);
+  }
+}
+.selectOption {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 16px;
+  width: 100%;
+  white-space: nowrap;
+  border: none;
+  border-radius: 6px;
+  background: none;
+  padding: 9px 12px;
+  font: inherit;
+  font-size: 12.5px;
+  text-align: left;
+  color: var(--ink-2);
+  cursor: pointer;
+  transition:
+    background-color 0.15s var(--ease),
+    color 0.15s var(--ease);
+}
+.selectOption:hover {
+  background: var(--brand-tint);
+  color: var(--brand);
+}
+.selectOptionOn {
+  background: var(--brand-tint);
+  color: var(--brand);
+  font-weight: 600;
+}
+.selectCheck {
+  font-size: 12px;
 }
 
 .timeline {
@@ -241,7 +326,9 @@
   background: var(--surface);
   box-shadow: var(--shadow-soft);
   padding: 16px 18px;
-  transition: box-shadow 0.2s var(--ease), transform 0.2s var(--ease);
+  transition:
+    box-shadow 0.2s var(--ease),
+    transform 0.2s var(--ease);
 }
 .card:hover {
   box-shadow: var(--shadow-lift);

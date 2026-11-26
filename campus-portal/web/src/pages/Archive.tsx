@@ -1,4 +1,4 @@
-import { useEffect, useState, type FormEvent } from 'react';
+import { useEffect, useRef, useState, type FormEvent } from 'react';
 import {
   getArchive,
   getArchiveArticle,
@@ -18,6 +18,82 @@ const dayLabel = (published: string) => {
   const [, mm, dd] = published.split('-');
   return `${Number(mm)}.${Number(dd)}`;
 };
+
+type SelectOption = { value: string; label: string };
+
+/** 自定义下拉：点击后在按钮正下方展开面板，可滚动、可键盘关闭。 */
+function FilterSelect({
+  label,
+  value,
+  options,
+  placeholder,
+  onChange,
+}: {
+  label: string;
+  value: string;
+  options: readonly SelectOption[];
+  placeholder: string;
+  onChange: (value: string) => void;
+}) {
+  const [open, setOpen] = useState(false);
+  const rootRef = useRef<HTMLDivElement | null>(null);
+
+  useEffect(() => {
+    if (!open) return;
+    const onPointer = (event: PointerEvent) => {
+      if (!rootRef.current?.contains(event.target as Node)) setOpen(false);
+    };
+    const onKey = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') setOpen(false);
+    };
+    document.addEventListener('pointerdown', onPointer);
+    document.addEventListener('keydown', onKey);
+    return () => {
+      document.removeEventListener('pointerdown', onPointer);
+      document.removeEventListener('keydown', onKey);
+    };
+  }, [open]);
+
+  const current = options.find((item) => item.value === value);
+  const shown = current ? current.label : placeholder;
+
+  return (
+    <div className={s.selectRoot} ref={rootRef}>
+      <button
+        type="button"
+        className={`${s.selectBtn} ${open ? s.selectBtnOpen : ''}`}
+        aria-label={label}
+        aria-haspopup="listbox"
+        aria-expanded={open}
+        onClick={() => setOpen((v) => !v)}
+      >
+        <span className={value ? s.selectValue : s.selectPlaceholder}>{shown}</span>
+        <span className={`${s.selectArrow} ${open ? s.selectArrowOpen : ''}`} aria-hidden="true" />
+      </button>
+      {open ? (
+        <ul className={s.selectPanel} role="listbox" aria-label={label}>
+          {options.map((item) => (
+            <li key={item.value}>
+              <button
+                type="button"
+                role="option"
+                aria-selected={item.value === value}
+                className={`${s.selectOption} ${item.value === value ? s.selectOptionOn : ''}`}
+                onClick={() => {
+                  onChange(item.value);
+                  setOpen(false);
+                }}
+              >
+                <span>{item.label}</span>
+                {item.value === value ? <span className={s.selectCheck}>✓</span> : null}
+              </button>
+            </li>
+          ))}
+        </ul>
+      ) : null}
+    </div>
+  );
+}
 
 /** 往期公众号推文：按时间线倒序浏览，可搜、可看正文、可直达微信原文。 */
 export default function Archive() {
@@ -104,9 +180,21 @@ export default function Archive() {
     .filter(Boolean)
     .sort((a, b) => b.localeCompare(a));
   // 月份级联：选中年份后只列该年的月份；未选年份时列全部。
-  const monthOptions = year
-    ? groups.filter((g) => g.month.startsWith(`${year}-`))
-    : groups;
+  const monthOptions = year ? groups.filter((g) => g.month.startsWith(`${year}-`)) : groups;
+
+  const yearSelectOptions: SelectOption[] = [
+    { value: '', label: '全部年份' },
+    ...years.map((y) => ({ value: y, label: `${y} 年` })),
+  ];
+  const monthSelectOptions: SelectOption[] = [
+    { value: '', label: '全部月份' },
+    ...monthOptions.map((item) => ({
+      value: item.month,
+      label: year
+        ? `${Number(item.month.split('-')[1])} 月 · ${item.count} 篇`
+        : `${monthLabel(item.month)} · ${item.count} 篇`,
+    })),
+  ];
 
   return (
     <div className={s.page}>
@@ -158,36 +246,23 @@ export default function Archive() {
               >
                 全部
               </button>
-              <select
-                className={s.select}
+              <FilterSelect
+                label="选择年份"
                 value={year}
-                onChange={(event) => {
-                  setYear(event.target.value);
+                options={yearSelectOptions}
+                placeholder="全部年份"
+                onChange={(v) => {
+                  setYear(v);
                   setMonth(''); // 换年后旧月份失效，清空避免筛出空结果
                 }}
-                aria-label="选择年份"
-              >
-                <option value="">全部年份</option>
-                {years.map((y) => (
-                  <option key={y} value={y}>
-                    {y} 年
-                  </option>
-                ))}
-              </select>
-              <select
-                className={s.select}
+              />
+              <FilterSelect
+                label="选择月份"
                 value={month}
-                onChange={(event) => setMonth(event.target.value)}
-                aria-label="选择月份"
-              >
-                <option value="">全部月份</option>
-                {monthOptions.map((item) => (
-                  <option key={item.month} value={item.month}>
-                    {year ? `${Number(item.month.split('-')[1])} 月` : monthLabel(item.month)}（
-                    {item.count} 篇）
-                  </option>
-                ))}
-              </select>
+                options={monthSelectOptions}
+                placeholder="全部月份"
+                onChange={setMonth}
+              />
             </div>
           </div>
 
@@ -294,9 +369,9 @@ export default function Archive() {
                 <p className={s.empty}>正在读取入库正文…</p>
               ) : (
                 <div className={s.text}>
-                  {detail.text.split('\n').map((line, index) =>
-                    line.trim() ? <p key={index}>{line.trim()}</p> : null,
-                  )}
+                  {detail.text
+                    .split('\n')
+                    .map((line, index) => (line.trim() ? <p key={index}>{line.trim()}</p> : null))}
                 </div>
               )}
             </div>
