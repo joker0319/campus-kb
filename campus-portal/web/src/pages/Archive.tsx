@@ -23,7 +23,8 @@ const dayLabel = (published: string) => {
 export default function Archive() {
   const [draft, setDraft] = useState('');
   const [query, setQuery] = useState('');
-  const [month, setMonth] = useState('');
+  const [year, setYear] = useState(''); // 选中的年份，'' 表示全部年份
+  const [month, setMonth] = useState(''); // 选中的月份 YYYY-MM，'' 表示全部月份
   const [data, setData] = useState<WechatArchive | null>(null);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(true);
@@ -31,10 +32,13 @@ export default function Archive() {
   const [detail, setDetail] = useState<WechatArticleDetail | null>(null);
   const [detailError, setDetailError] = useState('');
 
+  // 请求参数：选了具体月份用 YYYY-MM，只选年份用年份（后端按前缀匹配全年）。
+  const activeMonth = month || year;
+
   useEffect(() => {
     let cancelled = false;
     setLoading(true);
-    getArchive(query, month)
+    getArchive(query, activeMonth)
       .then((result) => {
         if (cancelled) return;
         setData(result);
@@ -49,7 +53,7 @@ export default function Archive() {
     return () => {
       cancelled = true;
     };
-  }, [query, month]);
+  }, [query, activeMonth]);
 
   useEffect(() => {
     if (!active) return;
@@ -85,24 +89,24 @@ export default function Archive() {
   const clearFilters = () => {
     setDraft('');
     setQuery('');
+    setYear('');
     setMonth('');
   };
 
-  // 下拉选项用全量月份（筛选后仍能切换）；时间线只渲染真正有文章的月份，
+  // 下拉选项基于全量月份（筛选后仍能切换）；时间线只渲染真正有文章的月份，
   // 否则选了某个月会出现其它月份「0 篇」的空分组。
   const groups = data?.months ?? [];
   const visibleGroups = groups.filter((g) =>
     data?.articles.some((article) => article.month === g.month),
   );
-  // 下拉选项按年份分组，跨年时先选年份、再选月份。
-  const yearGroups = groups.reduce<Record<string, { month: string; count: number }[]>>(
-    (acc, item) => {
-      const year = item.month.split('-')[0] ?? '';
-      (acc[year] ??= []).push(item);
-      return acc;
-    },
-    {},
-  );
+  // 年份从全量数据动态提取（倒序）：今后加入 2025 等年份会自动出现，无需改代码。
+  const years = [...new Set(groups.map((g) => g.month.split('-')[0] ?? ''))]
+    .filter(Boolean)
+    .sort((a, b) => b.localeCompare(a));
+  // 月份级联：选中年份后只列该年的月份；未选年份时列全部。
+  const monthOptions = year
+    ? groups.filter((g) => g.month.startsWith(`${year}-`))
+    : groups;
 
   return (
     <div className={s.page}>
@@ -145,31 +149,43 @@ export default function Archive() {
             <div className={s.monthFilter}>
               <button
                 type="button"
-                className={`${s.allBtn} ${month === '' ? s.allBtnOn : ''}`}
-                aria-pressed={month === ''}
-                onClick={() => setMonth('')}
+                className={`${s.allBtn} ${activeMonth === '' ? s.allBtnOn : ''}`}
+                aria-pressed={activeMonth === ''}
+                onClick={() => {
+                  setYear('');
+                  setMonth('');
+                }}
               >
                 全部
               </button>
-              <label className={s.monthLabel} htmlFor="archive-month">
-                按月份查找
-              </label>
               <select
-                id="archive-month"
+                className={s.select}
+                value={year}
+                onChange={(event) => {
+                  setYear(event.target.value);
+                  setMonth(''); // 换年后旧月份失效，清空避免筛出空结果
+                }}
+                aria-label="选择年份"
+              >
+                <option value="">全部年份</option>
+                {years.map((y) => (
+                  <option key={y} value={y}>
+                    {y} 年
+                  </option>
+                ))}
+              </select>
+              <select
                 className={s.select}
                 value={month}
                 onChange={(event) => setMonth(event.target.value)}
-                aria-label="按月份查找"
+                aria-label="选择月份"
               >
-                <option value="">选择月份</option>
-                {Object.entries(yearGroups).map(([year, items]) => (
-                  <optgroup key={year} label={`${year} 年`}>
-                    {items.map((item) => (
-                      <option key={item.month} value={item.month}>
-                        {Number(item.month.split('-')[1])} 月（{item.count} 篇）
-                      </option>
-                    ))}
-                  </optgroup>
+                <option value="">全部月份</option>
+                {monthOptions.map((item) => (
+                  <option key={item.month} value={item.month}>
+                    {year ? `${Number(item.month.split('-')[1])} 月` : monthLabel(item.month)}（
+                    {item.count} 篇）
+                  </option>
                 ))}
               </select>
             </div>

@@ -60,7 +60,7 @@ describe('往期推文档案页', () => {
           const q = parsed.searchParams.get('q') ?? '';
           const month = parsed.searchParams.get('month') ?? '';
           const filtered = ARCHIVE.articles.filter(
-            (a) => (!month || a.month === month) && (!q || `${a.title}${a.excerpt}`.includes(q)),
+            (a) => (!month || a.month.startsWith(month)) && (!q || `${a.title}${a.excerpt}`.includes(q)),
           );
           const body: WechatArchive = { ...ARCHIVE, articles: filtered, total: filtered.length };
           return Promise.resolve(new Response(JSON.stringify(body), { status: 200 }));
@@ -105,24 +105,35 @@ describe('往期推文档案页', () => {
     expect(String(call?.[0])).toContain('q=%E6%96%B0%E6%9D%90%E6%96%99');
   });
 
-  it('按月份下拉筛选，只显示选中月份、不留空分组', async () => {
+  it('年份+月份级联筛选，只显示选中范围、不留空分组', async () => {
     const user = userEvent.setup();
     render(<Archive />);
     await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
 
-    const dropdown = screen.getByLabelText('按月份查找');
-    expect((dropdown as HTMLSelectElement).value).toBe('');
+    const yearBox = screen.getByLabelText('选择年份') as HTMLSelectElement;
+    const monthBox = screen.getByLabelText('选择月份') as HTMLSelectElement;
+    expect(yearBox.value).toBe('');
+    expect(monthBox.value).toBe('');
 
-    await user.selectOptions(dropdown, '2026-09');
+    // 只选年份：按前缀筛出全年，时间线不留空分组
+    await user.selectOptions(yearBox, '2026');
+    await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
+    expect(monthBox.value).toBe('');
+
+    // 再选月份：级联收窄到该月
+    await user.selectOptions(monthBox, '2026-09');
     await waitFor(() => expect(screen.queryByText('十一月科研进展')).toBeNull());
     expect(screen.getByText('九月活动回顾')).toBeTruthy();
-    // 下拉选项仍是全量（可切换），但时间线只剩有文章的 9 月，不出现「0 篇」空组
-    expect((dropdown as HTMLSelectElement).querySelectorAll('option')).toHaveLength(3);
     expect(screen.queryByText('2026 年 11 月')).toBeNull();
 
-    await user.click(screen.getByRole('button', { name: '全部' }));
+    // 换年份会清空月份，避免旧月份导致空结果
+    await user.selectOptions(yearBox, '');
     await waitFor(() => expect(screen.getByText('十一月科研进展')).toBeTruthy());
-    expect((dropdown as HTMLSelectElement).value).toBe('');
+    expect(monthBox.value).toBe('');
+
+    await user.click(screen.getByRole('button', { name: '全部' }));
+    expect(yearBox.value).toBe('');
+    expect(monthBox.value).toBe('');
   });
 
   it('预览正文并直达原文', async () => {
